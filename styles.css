@@ -1,0 +1,41 @@
+.ink-block-stub {
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-3);
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+}
+
+.ink-diagnostics-modal {
+	width: min(1100px, 92vw);
+}
+
+.ink-diagnostics-layout {
+	display: grid;
+	grid-template-columns: 1fr 280px;
+	gap: var(--size-4-3);
+}
+
+.ink-diagnostics-canvas {
+	width: 100%;
+	height: 60vh;
+	touch-action: none;
+	background: var(--background-primary-alt);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	cursor: crosshair;
+}
+
+.ink-diagnostics-side pre {
+	margin: 0 0 var(--size-4-3);
+	font-size: var(--font-smallest);
+	white-space: pre-wrap;
+}
+
+.ink-diagnostics-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+	margin-top: var(--size-4-3);
+}

@@ -1,0 +1,9 @@
+{
+	"id": "obsidian-ink-blocks",
+	"name": "Ink Blocks",
+	"version": "0.0.1",
+	"minAppVersion": "1.5.0",
+	"description": "Handschrift mit dem Stift direkt in Notizen, auch auf PDF-Arbeitsblättern, mit lokaler Texterkennung für die Suche.",
+	"author": "Gamecat-HD",
+	"isDesktopOnly": false
+}

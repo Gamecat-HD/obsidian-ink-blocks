@@ -1,0 +1,13 @@
+{
+	"compilerOptions": {
+		"module": "ESNext",
+		"target": "ES2021",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"noImplicitAny": true,
+		"isolatedModules": true,
+		"importHelpers": false,
+		"lib": ["DOM", "DOM.Iterable", "ES2021"]
+	},
+	"include": ["src/**/*.ts"]
+}
