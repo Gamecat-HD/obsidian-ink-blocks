@@ -37,3 +37,13 @@ const wasm = resolve(ROOT, "models/ort/ort-wasm-simd-threaded.wasm");
 await mkdir(dirname(wasm), { recursive: true });
 await copyFile(resolve(ROOT, "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm"), wasm);
 console.log("ok       ort/ort-wasm-simd-threaded.wasm (aus node_modules)");
+
+// tesseract.js-Dateien (Fallback-Engine) aus node_modules – identisch mit den gepinnten jsDelivr-Dateien
+for (const [src, dst] of [
+	["node_modules/tesseract.js/dist/tesseract.min.js", "tesseract/tesseract.min.js"],
+	["node_modules/tesseract.js/dist/worker.min.js", "tesseract/worker.min.js"],
+	["node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js", "tesseract/tesseract-core-simd-lstm.wasm.js"],
+]) {
+	await copyFile(resolve(ROOT, src), resolve(ROOT, "models", dst));
+	console.log(`ok       ${dst} (aus node_modules)`);
+}

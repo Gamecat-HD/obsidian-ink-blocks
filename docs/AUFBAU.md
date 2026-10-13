@@ -195,3 +195,5 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **OCR (M5):** Die Lücke für neue Segmente bezieht sich auf die Zeilenhöhe, nicht auf die Strichhöhe. Druckbuchstaben bestehen aus kurzen Strichen, und Wortabstände sollen im Segment bleiben.
 - **Re-Aktivierung:** War der Block beim Schreiben von `text:` aktiv, aktiviert sich die neu gerenderte Instanz wieder (`entry.reactivate`), damit Strg+Z weiter auf die Tinte wirkt.
 - **Testdaten:** Die E2E-Tests erzeugen „Handschrift“ als echte Pointer-Striche aus Einstrich-Fonts (`hersheytext`, `scripts/e2e/lib/hershey.mjs`). Umlaute setzen sie aus Grundbuchstabe + zwei Punkt-Strichen zusammen.
+- **Tesseract (M6):** Das Plugin-Bundle ist CommonJS. esbuild würde ein `import()` der Blob-URL in `require` umschreiben. Deshalb wird die UMD-Variante per `<script>` geladen (`window.Tesseract`). tesseract.js ist nur noch Dev-Abhängigkeit (Tests, `fetch-models`).
+- **Fallback nur bei Bedarf:** Eine Engine wird erst geladen, wenn Segmente ohne Cache-Treffer erkannt werden müssen. Ein kaputtes Modell fällt also erst beim nächsten neuen Strich auf.

@@ -59,10 +59,7 @@ export default async (h) => {
 		assert.equal(served.length, 3, served.join("\n"));
 		assert.ok(served.some((u) => u.startsWith("https://huggingface.co/naeyn/de-htr-web-v2/resolve/6241c1ff")));
 		assert.ok(served.some((u) => u === "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm"));
-		assert.equal(await h.evaluate((id) => app.plugins.plugins[id].ocr.models.isReady({
-			model: { path: "de-htr-web-v2/model.onnx", size: 10396365 },
-			config: { path: "de-htr-web-v2/config.json", size: 1362 },
-		}), ID), true);
+		assert.deepEqual(await h.evaluate((id) => app.plugins.plugins[id].ocr.readyEngines(), ID), ["htr-v2"]);
 
 		// Zweiter Download lädt nichts erneut
 		served.length = 0;

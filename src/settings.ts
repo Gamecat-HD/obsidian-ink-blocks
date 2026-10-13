@@ -1,6 +1,6 @@
 import { normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InkBlocksPlugin from "./main";
-import { ENGINES, engineFiles } from "./ocr/models";
+import { ENGINE_ORDER, ENGINES, engineFiles, type EngineId } from "./ocr/models";
 
 export type BgStyle = "ruled" | "grid" | "blank";
 export type ToolId = "pen" | "hl" | "eraser";
@@ -32,6 +32,8 @@ export interface InkSettings {
 	ocrEnabled: boolean;
 	/** Ruhepause nach dem letzten Strich, bevor erkannt wird (Sekunden). */
 	ocrDelay: number;
+	/** „auto“ = de-htr-web-v2 → v1 → Tesseract.js, je nachdem was geladen ist und funktioniert. */
+	ocrEngine: "auto" | EngineId;
 }
 
 export const DEFAULT_SETTINGS: InkSettings = {
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0 },
 	ocrEnabled: true,
 	ocrDelay: 10,
+	ocrEngine: "auto",
 };
 
 export class InkSettingTab extends PluginSettingTab {
@@ -105,33 +108,44 @@ export class InkSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
-		this.modelSetting(containerEl);
+		new Setting(containerEl)
+			.setName("Erkennungs-Engine")
+			.setDesc("Automatisch: de-htr-web-v2, sonst v1, sonst Tesseract.js – je nachdem, was geladen ist und funktioniert.")
+			.addDropdown((dd) =>
+				dd
+					.addOptions({ auto: "Automatisch", "htr-v2": ENGINES["htr-v2"].label, "htr-v1": ENGINES["htr-v1"].label, tesseract: ENGINES.tesseract.label })
+					.setValue(this.plugin.settings.ocrEngine)
+					.onChange(async (v) => {
+						this.plugin.settings.ocrEngine = v as InkSettings["ocrEngine"];
+						await this.plugin.saveSettings();
+						this.plugin.ocr.reset();
+					}),
+			);
+		for (const id of ENGINE_ORDER) this.modelSetting(containerEl, id);
 	}
 
-	private modelSetting(containerEl: HTMLElement) {
-		const spec = ENGINES["htr-v2"];
+	private modelSetting(containerEl: HTMLElement, id: EngineId) {
+		const spec = ENGINES[id];
 		const mb = (engineFiles(spec).reduce((n, f) => n + f.size, 0) / 1e6).toFixed(0);
-		const setting = new Setting(containerEl)
-			.setName(`Erkennungsmodell (${spec.label})`)
-			.setDesc("Wird geprüft …");
-		const desc = (text: string) => setting.setDesc(text);
+		const setting = new Setting(containerEl).setName(spec.label).setDesc("Wird geprüft …");
+		setting.settingEl.addClass("ink-model-setting");
 		void this.plugin.ocr.models.isReady(spec).then((ready) => {
 			if (ready) {
-				desc("Bereit – läuft komplett offline.");
+				setting.setDesc("Bereit – läuft komplett offline.");
 				return;
 			}
-			desc(
-				`Einmaliger Download (~${mb} MB) von Hugging Face und jsDelivr in den Plugin-Ordner, danach offline. Es werden keine Notizen oder Handschriften übertragen.`,
-			);
+			const hint = id === "htr-v2" ? "Empfohlen. " : "Optional (Ausweich-Engine). ";
+			setting.setDesc(`${hint}Einmaliger Download (~${mb} MB) in den Plugin-Ordner, danach offline. Es werden keine Notizen oder Handschriften übertragen.`);
 			setting.addButton((b) =>
 				b
 					.setButtonText("Herunterladen")
-					.setCta()
+					.then((btn) => id === "htr-v2" && btn.setCta())
 					.onClick(async () => {
 						b.setDisabled(true);
 						try {
 							await this.plugin.ocr.models.download(spec, (f, i, n) => b.setButtonText(`${i + 1}/${n}: ${f.path.split("/").pop()}`));
-							new Notice("Texterkennung bereit.");
+							this.plugin.ocr.reset();
+							new Notice(`${spec.label} bereit.`);
 						} catch (e) {
 							new Notice(`Download fehlgeschlagen: ${(e as Error).message}`, 10000);
 						}

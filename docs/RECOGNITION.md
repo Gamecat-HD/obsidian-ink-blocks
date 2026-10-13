@@ -103,3 +103,20 @@ text: |
 - Dauer: ca. 1 s pro Zeile. Zwei Zeilen standen ca. 4 s nach dem letzten Strich im Block (1 s Ruhepause + Laden + Inferenz).
 - Schreibschrift-ähnliche Fonts (EMSAllure, HersheyScript) werden schlechter erkannt („Jtalla Welt“), Ziffernfolgen dagegen gut.
 - **Echte Handschrift muss noch auf dem HP-Gerät gemessen werden** (M7: CER auf 30 eigenen Zeilen).
+
+## Fallback-Kette (M6)
+
+- **Einstellung „Erkennungs-Engine“:** *Automatisch* (Standard) versucht de-htr-web-v2, dann v1, dann Tesseract.js. Genommen wird die erste Engine, deren Dateien vollständig vorliegen und die in dieser Sitzung nicht gescheitert ist. Scheitert eine Engine beim Laden oder Erkennen (z. B. beschädigte Datei), kommt sofort die nächste dran, mit Hinweis („… nicht verfügbar – nutze …“). Wählt man eine Engine manuell, gibt es keinen Fallback: Fehlt sie, erscheint ein Hinweis, und der Text bleibt unverändert.
+- **Cache je Engine-Version:** Ein Wechsel der Engine erkennt alle Segmente neu. Gültige Cache-Treffer werden weiterverwendet, die Engine wird dann gar nicht erst geladen.
+- **Tesseract.js wird nicht gebündelt:**
+  - Wie die Modelle wird es auf Knopfdruck geladen (gepinnte jsDelivr-Versionen, SHA-256): `tesseract.min.js` (UMD, per `<script>` aus einer Blob-URL), `worker.min.js` und `tesseract-core-simd-lstm.wasm.js` (Blob-URLs), dazu `deu.traineddata.gz` (`@tesseract.js-data/deu@1.0.0`, best_int) über die Ressourcen-URL des Modellordners. Zusammen ca. 5 MB.
+  - Seitensegmentierung 7 (eine Zeile). Gerastert wird auf 96 px Höhe, auf dem Hauptthread; Tesseract erkennt in seinem eigenen Worker.
+- **Gemessen (E2E, EMSReadability-Striche):**
+
+| Engine | Ergebnis |
+|---|---|
+| v2 | „Hallo Welt“ |
+| v1 | „Hall0 Welt / Netz“ |
+| Tesseract | „Hallo Welt / Netz / Maske“ |
+
+Tesseract kommt mit dieser sehr gleichmäßigen Druckschrift gut zurecht. Bei echter Handschrift ist es laut Benchmark deutlich schwächer (CER ca. 43 %).

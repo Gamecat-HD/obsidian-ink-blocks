@@ -39,9 +39,11 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 		id: "download-models",
 		name: "Texterkennung: Modelle herunterladen",
 		callback: async () => {
-			const notice = new Notice("Lade Erkennungsmodell …", 0);
+			const spec = ENGINES[plugin.ocr.candidates()[0]];
+			const notice = new Notice(`Lade ${spec.label} …`, 0);
 			try {
-				await plugin.ocr.models.download(ENGINES["htr-v2"], (f, i, n) => notice.setMessage(`Lade ${i + 1}/${n}: ${f.path}`));
+				await plugin.ocr.models.download(spec, (f, i, n) => notice.setMessage(`Lade ${i + 1}/${n}: ${f.path}`));
+				plugin.ocr.reset();
 				notice.setMessage("Texterkennung bereit.");
 			} catch (e) {
 				notice.setMessage(`Download fehlgeschlagen: ${(e as Error).message}`);

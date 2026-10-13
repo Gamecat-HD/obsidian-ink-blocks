@@ -10,70 +10,78 @@ export interface ModelFile {
 	size: number;
 }
 
-export type EngineId = "htr-v2" | "htr-v1";
+export type EngineId = "htr-v2" | "htr-v1" | "tesseract";
 
 export interface EngineSpec {
 	id: EngineId;
 	label: string;
+	/** Alle Dateien, die die Engine braucht (Grundlage für Download und Bereitschaft). */
+	files: ModelFile[];
+}
+
+export interface HtrSpec extends EngineSpec {
 	model: ModelFile;
 	config: ModelFile;
 }
 
 const HF = "https://huggingface.co";
+const JSD = "https://cdn.jsdelivr.net/npm";
 
 /** onnxruntime-Wasm passend zur gebündelten JS-Version (Version kommt aus package.json). */
 export const ORT_WASM: ModelFile = {
 	path: "ort/ort-wasm-simd-threaded.wasm",
-	url: `https://cdn.jsdelivr.net/npm/onnxruntime-web@${__ORT_VERSION__}/dist/ort-wasm-simd-threaded.wasm`,
+	url: `${JSD}/onnxruntime-web@${__ORT_VERSION__}/dist/ort-wasm-simd-threaded.wasm`,
 	sha256: "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2",
 	size: 14239897,
 };
 
-/** Gepinnte Hugging-Face-Commits – die Dateien hinter den URLs können sich nicht mehr ändern. */
-export const ENGINES: Record<EngineId, EngineSpec> = {
-	"htr-v2": {
-		id: "htr-v2",
-		label: "de-htr-web-v2",
-		model: {
-			path: "de-htr-web-v2/model.onnx",
-			url: `${HF}/naeyn/de-htr-web-v2/resolve/6241c1ff0fd42725e0dc46fcd3217469cac851bb/model.onnx`,
-			sha256: "b576a0a1281b9be46b2574028b75575e041b7d7cb650f063886e733467cc1499",
-			size: 10396365,
-		},
-		config: {
-			path: "de-htr-web-v2/config.json",
-			url: `${HF}/naeyn/de-htr-web-v2/resolve/6241c1ff0fd42725e0dc46fcd3217469cac851bb/config.json`,
-			sha256: "4ebd69d9d27b398ea3997b031318accc13123f6a8950def1fedc6e364cb758fa",
-			size: 1362,
-		},
-	},
-	"htr-v1": {
-		id: "htr-v1",
-		label: "de-htr-web (v1)",
-		model: {
-			path: "de-htr-web/model.onnx",
-			url: `${HF}/naeyn/de-htr-web/resolve/8b0350ccd9bbc741977fee79ac40ea1ed37633e7/model.onnx`,
-			sha256: "05cce04d3938a64edaee79caf2a74587eaa9f8c46c146d6e04f0512bfce51d82",
-			size: 9843872,
-		},
-		config: {
-			path: "de-htr-web/config.json",
-			url: `${HF}/naeyn/de-htr-web/resolve/8b0350ccd9bbc741977fee79ac40ea1ed37633e7/config.json`,
-			sha256: "d4889234f69329e5e0b834c96a06dc084e5fa44658968168940844e389560a79",
-			size: 604,
-		},
+function htr(id: "htr-v2" | "htr-v1", label: string, repo: string, dir: string, commit: string, model: [string, number], config: [string, number]): HtrSpec {
+	const file = (name: string, [sha256, size]: [string, number]): ModelFile => ({
+		path: `${dir}/${name}`,
+		url: `${HF}/${repo}/resolve/${commit}/${name}`,
+		sha256,
+		size,
+	});
+	const m = file("model.onnx", model);
+	const c = file("config.json", config);
+	return { id, label, model: m, config: c, files: [m, c, ORT_WASM] };
+}
+
+/** Gepinnte Versionen/Commits – die Dateien hinter den URLs können sich nicht mehr ändern. */
+export const HTR_V2 = htr("htr-v2", "de-htr-web-v2", "naeyn/de-htr-web-v2", "de-htr-web-v2", "6241c1ff0fd42725e0dc46fcd3217469cac851bb",
+	["b576a0a1281b9be46b2574028b75575e041b7d7cb650f063886e733467cc1499", 10396365],
+	["4ebd69d9d27b398ea3997b031318accc13123f6a8950def1fedc6e364cb758fa", 1362]);
+
+export const HTR_V1 = htr("htr-v1", "de-htr-web (v1)", "naeyn/de-htr-web", "de-htr-web", "8b0350ccd9bbc741977fee79ac40ea1ed37633e7",
+	["05cce04d3938a64edaee79caf2a74587eaa9f8c46c146d6e04f0512bfce51d82", 9843872],
+	["d4889234f69329e5e0b834c96a06dc084e5fa44658968168940844e389560a79", 604]);
+
+/** tesseract.js wird nicht gebündelt, sondern wie die Modelle geladen (UMD-Bibliothek, Worker, Wasm-Kern, Sprachdaten). */
+export const TESSERACT = {
+	id: "tesseract" as const,
+	label: "Tesseract.js (deu)",
+	lib: { path: "tesseract/tesseract.min.js", url: `${JSD}/tesseract.js@7.0.0/dist/tesseract.min.js`, sha256: "000c27d9cd0def655f77b36c72a389c0ab13793aa31cb4d7aab56d09c0afbc7e", size: 62961 },
+	worker: { path: "tesseract/worker.min.js", url: `${JSD}/tesseract.js@7.0.0/dist/worker.min.js`, sha256: "576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d", size: 111307 },
+	core: { path: "tesseract/tesseract-core-simd-lstm.wasm.js", url: `${JSD}/tesseract.js-core@7.0.0/tesseract-core-simd-lstm.wasm.js`, sha256: "c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38", size: 3899472 },
+	lang: { path: "tesseract/deu.traineddata.gz", url: `${JSD}/@tesseract.js-data/deu@1.0.0/4.0.0_best_int/deu.traineddata.gz`, sha256: "306c4280d0cbed46fbff727486bd43b92730181bae80f56941a091f363bdf28b", size: 1333102 },
+	get files(): ModelFile[] {
+		return [this.lib, this.worker, this.core, this.lang];
 	},
 };
 
+export const ENGINES: Record<EngineId, EngineSpec> = { "htr-v2": HTR_V2, "htr-v1": HTR_V1, tesseract: TESSERACT };
+/** Reihenfolge für „Automatisch“. */
+export const ENGINE_ORDER: EngineId[] = ["htr-v2", "htr-v1", "tesseract"];
+
 export function engineFiles(spec: EngineSpec): ModelFile[] {
-	return [spec.model, spec.config, ORT_WASM];
+	return spec.files;
 }
 
 /** Lädt Modelldateien einmalig in den Plugin-Ordner und liest sie von dort (danach offline). */
 export class ModelStore {
 	constructor(private readonly plugin: InkBlocksPlugin) {}
 
-	private abs(file: ModelFile) {
+	abs(file: ModelFile) {
 		return normalizePath(`${this.plugin.manifest.dir}/models/${file.path}`);
 	}
 
@@ -85,6 +93,11 @@ export class ModelStore {
 			if (!stat || stat.size !== file.size) return false;
 		}
 		return true;
+	}
+
+	/** URL, unter der der Renderer (und Worker) eine Datei/einen Ordner im Plugin lesen kann – ohne Query. */
+	resourceUrl(vaultPath: string): string {
+		return this.plugin.app.vault.adapter.getResourcePath(vaultPath).replace(/\?.*$/, "");
 	}
 
 	async read(file: ModelFile): Promise<ArrayBuffer> {

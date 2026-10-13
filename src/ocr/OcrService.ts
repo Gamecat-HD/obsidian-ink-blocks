@@ -3,9 +3,8 @@ import { readBlockField, writeBlockField } from "../block/BlockWriter";
 import type InkBlocksPlugin from "../main";
 import type { InkEntry } from "../store/InkStore";
 import { fnv1a } from "../util/hash";
-import { HtrEngine, type Engine } from "./engines";
-import { ENGINES, ModelStore } from "./models";
-import type { WorkerSegment } from "./protocol";
+import { HtrEngine, TesseractEngine, type Engine } from "./engines";
+import { ENGINE_ORDER, ENGINES, HTR_V1, HTR_V2, ModelStore, type EngineId } from "./models";
 import { referenceHeight, segmentLines } from "./segment";
 
 /** Wohin das Ergebnis geschrieben wird – ein ink-Block in einer Notiz. */
@@ -32,7 +31,10 @@ const RETRY_BUSY_MS = 2000;
  */
 export class OcrService {
 	readonly models: ModelStore;
-	private engine: Engine | null = null;
+	private readonly engines = new Map<EngineId, Engine>();
+	/** In dieser Sitzung gescheiterte Engines (Laden/Erkennen) – werden übersprungen. */
+	private readonly failed = new Set<EngineId>();
+	private lastEngine: EngineId | null = null;
 	private readonly timers = new Map<string, number>();
 	private readonly running = new Map<string, Promise<OcrOutcome>>();
 	private warnedMissing = false;
@@ -44,8 +46,29 @@ export class OcrService {
 	dispose() {
 		for (const t of this.timers.values()) window.clearTimeout(t);
 		this.timers.clear();
-		this.engine?.dispose();
-		this.engine = null;
+		this.reset();
+	}
+
+	/** Engines neu bestimmen (nach Download, Engine-Wechsel in den Einstellungen). */
+	reset() {
+		for (const e of this.engines.values()) e.dispose();
+		this.engines.clear();
+		this.failed.clear();
+		this.lastEngine = null;
+		this.warnedMissing = false;
+	}
+
+	/** Engines, deren Dateien vollständig vorliegen. */
+	async readyEngines(): Promise<EngineId[]> {
+		const ready: EngineId[] = [];
+		for (const id of ENGINE_ORDER) if (await this.models.isReady(ENGINES[id])) ready.push(id);
+		return ready;
+	}
+
+	/** Engines in der Reihenfolge, in der sie versucht werden. */
+	candidates(): EngineId[] {
+		const choice = this.plugin.settings.ocrEngine;
+		return choice === "auto" ? ENGINE_ORDER : [choice];
 	}
 
 	/** Nach einer Änderung: in `ocrDelay` Sekunden erkennen (Timer wird bei jeder Änderung neu gestartet). */
@@ -76,41 +99,69 @@ export class OcrService {
 		return next;
 	}
 
-	private async getEngine(): Promise<Engine | null> {
-		if (this.engine) return this.engine;
-		if (!(await this.models.isReady(ENGINES["htr-v2"]))) return null;
-		this.engine = new HtrEngine("htr-v2", this.models);
-		return this.engine;
+	private create(id: EngineId): Engine {
+		let engine = this.engines.get(id);
+		if (!engine) {
+			engine = id === "tesseract" ? new TesseractEngine(this.models) : new HtrEngine(id === "htr-v2" ? HTR_V2 : HTR_V1, this.models);
+			this.engines.set(id, engine);
+		}
+		return engine;
+	}
+
+	/** Erste bereite, nicht gescheiterte Engine; meldet einen Wechsel auf eine Ausweich-Engine. */
+	private async pickEngine(): Promise<Engine | null> {
+		const order = this.candidates();
+		for (const id of order) {
+			if (this.failed.has(id) || !(await this.models.isReady(ENGINES[id]))) continue;
+			if (id !== order[0] && id !== this.lastEngine) {
+				new Notice(`Texterkennung: ${ENGINES[order[0]].label} nicht verfügbar – nutze ${ENGINES[id].label}.`, 8000);
+			}
+			this.lastEngine = id;
+			return this.create(id);
+		}
+		return null;
+	}
+
+	private markFailed(engine: Engine, error: unknown) {
+		console.warn(`[ink-blocks] OCR-Engine ${engine.id} fehlgeschlagen`, error);
+		this.failed.add(engine.id);
+		engine.dispose();
+		this.engines.delete(engine.id);
 	}
 
 	private async recognize(target: OcrTarget, force: boolean): Promise<OcrOutcome> {
 		if (!this.plugin.settings.ocrEnabled && !force) return "disabled";
 		if (target.busy()) return "busy";
-		const engine = await this.getEngine();
-		if (!engine) {
-			if (!this.warnedMissing) {
-				this.warnedMissing = true;
-				new Notice("Texterkennung: Modelle fehlen noch – Einstellungen → Ink Blocks → „Herunterladen“.", 10000);
-			}
-			return "no-models";
-		}
-
 		const { entry } = target;
 		const doc = entry.doc;
 		const lines = segmentLines(doc.strokes);
 		const refHeight = referenceHeight(doc.strokes.filter((s) => s.tool === "pen"));
-		const cache = doc.ocr?.engine === engine.version ? doc.ocr.lines : {};
-		const todo = lines.flat().filter((seg) => !(seg.key in cache));
 
+		// Engine wählen und erkennen; scheitert sie, die nächste versuchen (eigener Cache je Engine-Version).
+		let engine: Engine | null;
+		let cache: Record<string, string>;
 		const recognized: Record<string, string> = {};
-		if (todo.length) {
-			const segments: WorkerSegment[] = todo.map((seg) => ({
-				strokes: seg.strokes.map((s) => s.points),
-				box: seg.box,
-				refHeight,
-			}));
-			const results = await engine.recognize(segments);
-			todo.forEach((seg, i) => (recognized[seg.key] = results[i]?.text ?? ""));
+		for (;;) {
+			engine = await this.pickEngine();
+			if (!engine) {
+				if (!this.warnedMissing) {
+					this.warnedMissing = true;
+					new Notice("Texterkennung: Modelle fehlen noch – Einstellungen → Ink Blocks → „Herunterladen“.", 10000);
+				}
+				return "no-models";
+			}
+			cache = doc.ocr?.engine === engine.version ? doc.ocr.lines : {};
+			const todo = lines.flat().filter((seg) => !(seg.key in cache));
+			if (!todo.length) break;
+			try {
+				const results = await engine.recognize(
+					todo.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight })),
+				);
+				todo.forEach((seg, i) => (recognized[seg.key] = results[i]?.text ?? ""));
+				break;
+			} catch (e) {
+				this.markFailed(engine, e);
+			}
 		}
 		const lookup = (key: string) => recognized[key] ?? cache[key] ?? "";
 		const text = lines
