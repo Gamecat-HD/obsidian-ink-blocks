@@ -84,7 +84,7 @@ export class PenDiagnosticsModal extends Modal {
 			new Notice("Pen-Report in die Zwischenablage kopiert");
 		};
 
-		const ctx = this.canvas.getContext("2d", { desynchronized: true });
+		const ctx = this.canvas.getContext("2d");
 		if (!ctx) throw new Error("Canvas 2D nicht verfügbar");
 		this.ctx = ctx;
 

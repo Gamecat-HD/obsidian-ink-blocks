@@ -11,6 +11,10 @@ export interface ToolbarActions {
 	/** `null` = kein Hintergrund-Umschalter (Arbeitsblatt – dort ist „Tinte“ schwarz). */
 	bgStyle(): BgStyle | null;
 	cycleBg(): void;
+	/** Ausklappen/Einklappen (fehlt → kein Button). */
+	toggleExpand?: () => void;
+	/** Leiste gehört zur ausgeklappten Ansicht. */
+	expanded?: boolean;
 }
 
 const TOOLS: { id: ToolId; icon: string; label: string }[] = [
@@ -83,6 +87,11 @@ export class Toolbar {
 		this.undoBtn = this.button(edit, "undo-2", "Rückgängig (Strg+Z)", () => actions.undo());
 		this.redoBtn = this.button(edit, "redo-2", "Wiederholen (Strg+Umschalt+Z)", () => actions.redo());
 		this.bgBtn = this.button(edit, "align-justify", "Hintergrund", () => actions.cycleBg());
+		if (actions.toggleExpand) {
+			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
+			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
+			btn.addClass("ink-tb-expand");
+		}
 
 		this.update();
 	}

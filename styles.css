@@ -288,3 +288,66 @@
 	justify-content: flex-end;
 	margin-top: var(--size-4-3);
 }
+
+/* ---- Ausgeklappte Schreibfläche ---- */
+
+.modal.ink-expanded-modal {
+	width: 96vw;
+	max-width: 96vw;
+	height: 94vh;
+	max-height: 94vh;
+	display: flex;
+	flex-direction: column;
+	padding: var(--size-4-3);
+}
+
+.ink-expanded-modal .modal-content {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+}
+
+.ink-expanded-scroll {
+	flex: 1;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.ink-block.ink-expanded {
+	margin: 0 auto;
+	max-width: 1600px;
+}
+
+/* Im Dialog ist die Leiste immer sichtbar; Platz für den Schließen-Button des Dialogs braucht sie nicht. */
+.ink-block.ink-expanded .ink-toolbar {
+	right: 0;
+}
+
+/* ---- Eingebettete Bilder/PDFs beschriften ---- */
+
+.internal-embed:has(> .ink-embed-annotate) {
+	position: relative;
+}
+
+.ink-embed-annotate {
+	position: absolute;
+	top: var(--size-4-2);
+	right: var(--size-4-2);
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-2);
+	font-size: var(--font-smaller);
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.internal-embed:hover > .ink-embed-annotate {
+	opacity: 1;
+}
+
+.ink-embed-annotate svg {
+	width: 14px;
+	height: 14px;
+}

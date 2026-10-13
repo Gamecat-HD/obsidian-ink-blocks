@@ -11,6 +11,7 @@ import { benchmarkNote, benchmarkReport, parseBenchmark, upsertReport } from "./
 import { ENGINES } from "./ocr/models";
 import { rasterizeSegment } from "./ocr/raster";
 import { referenceHeight, segmentLines } from "./ocr/segment";
+import { convertEmbedAtLine } from "./ui/EmbedAnnotator";
 import { OrphanModal } from "./ui/OrphanModal";
 import { inkFileName, shortId } from "./util/ids";
 
@@ -28,6 +29,14 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 			const note = ctx.file;
 			if (!note) return;
 			new WorksheetFileModal(plugin.app, (file) => void pickPages(plugin, editor, note, file)).open();
+		},
+	});
+
+	plugin.addCommand({
+		id: "annotate-embed",
+		name: "Bild/PDF in dieser Zeile beschriftbar machen",
+		editorCallback: (editor, ctx) => {
+			if (ctx.file) void convertEmbedAtLine(plugin, editor, ctx.file, editor.getCursor().line);
 		},
 	});
 
@@ -136,16 +145,44 @@ async function insertNotebook(plugin: InkBlocksPlugin, editor: Editor, ctx: Mark
 }
 
 async function pickPages(plugin: InkBlocksPlugin, editor: Editor, note: TFile, file: TFile) {
-	if (backgroundKind(file) !== "pdf") return insertWorksheet(plugin, editor, note, file, [undefined]);
+	const pages = await choosePages(plugin, file);
+	if (pages) await insertWorksheet(plugin, editor, note, file, pages);
+}
+
+/**
+ * Seiten für ein Arbeitsblatt bestimmen: Bild → eine Fläche; PDF mit fester Seite → diese; einseitiges
+ * PDF → Seite 1; sonst Auswahl (eine Seite oder alle). `null` = abgebrochen/nicht lesbar.
+ */
+export async function choosePages(plugin: InkBlocksPlugin, file: TFile, page?: number): Promise<(number | undefined)[] | null> {
+	if (backgroundKind(file) !== "pdf") return [undefined];
+	if (page) return [page];
 	let count: number;
 	try {
 		count = (await openPdf(plugin.app, file)).numPages;
 	} catch {
 		new Notice(`PDF nicht lesbar: ${file.path}`);
-		return;
+		return null;
 	}
-	if (count === 1) return insertWorksheet(plugin, editor, note, file, [1]);
-	new WorksheetPageModal(plugin.app, count, (pages) => void insertWorksheet(plugin, editor, note, file, pages)).open();
+	if (count === 1) return [1];
+	return new Promise((resolve) => new WorksheetPageModal(plugin.app, count, resolve, () => resolve(null)).open());
+}
+
+/** Legt je Seite eine Arbeitsblatt-Fläche an und liefert die Block-Inhalte (file: + bg:). */
+export async function createWorksheetBodies(
+	plugin: InkBlocksPlugin,
+	note: TFile,
+	file: TFile,
+	pages: (number | undefined)[],
+): Promise<string[]> {
+	const linktext = plugin.app.metadataCache.fileToLinktext(file, note.path, false);
+	const bodies: string[] = [];
+	for (const page of pages) {
+		const bg = await measureBackground(plugin.app, file, page);
+		const { path, id } = freeInkPath(plugin, `${note.basename} ${file.basename}${page ? ` s${page}` : ""}`);
+		await plugin.store.create(path, createPage(id, bg));
+		bodies.push(setField(`file: ${path}`, "bg", formatBgLink(linktext, page)));
+	}
+	return bodies;
 }
 
 /** Legt je Seite eine Arbeitsblatt-Fläche an und fügt die Blöcke untereinander ein. */
@@ -156,17 +193,10 @@ export async function insertWorksheet(
 	file: TFile,
 	pages: (number | undefined)[],
 ) {
-	const linktext = plugin.app.metadataCache.fileToLinktext(file, note.path, false);
-	for (const page of pages) {
-		try {
-			const bg = await measureBackground(plugin.app, file, page);
-			const { path, id } = freeInkPath(plugin, `${note.basename} ${file.basename}${page ? ` s${page}` : ""}`);
-			await plugin.store.create(path, createPage(id, bg));
-			insertBlockAtCursor(editor, setField(`file: ${path}`, "bg", formatBgLink(linktext, page)));
-		} catch (e) {
-			new Notice(`Arbeitsblatt konnte nicht angelegt werden: ${(e as Error).message}`);
-			return;
-		}
+	try {
+		for (const body of await createWorksheetBodies(plugin, note, file, pages)) insertBlockAtCursor(editor, body);
+	} catch (e) {
+		new Notice(`Arbeitsblatt konnte nicht angelegt werden: ${(e as Error).message}`);
 	}
 }
 

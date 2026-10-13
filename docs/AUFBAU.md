@@ -202,3 +202,10 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **Leseansicht:** Der Block funktioniert dort genauso, auch Zeichnen (E2E-getestet).
 - **Gleichzeitige Änderungen:** Lokaler, noch nicht gespeicherter Strich plus per Sync geänderte Datei werden zusammengeführt (E2E-getestet).
 - **Messung und Debug:** `ocr/benchmark.ts` enthält 30 Sätze (Alphabet von v2 geprüft), CER per Levenshtein-Distanz und einen Bericht als Markdown-Tabelle. Der Debug-Befehl speichert die Segmentbilder nach `<Ordner>/_debug/`.
+
+### Erweiterung nach v0.1.0 (M8)
+
+- **Live-Strich unsichtbar (Bug):** Der Live-Canvas nutzte `getContext("2d", { desynchronized: true })`. Unter Linux/Wayland mit GPU-Compositing (Obsidian des Nutzers) war der Strich erst nach dem Absetzen zu sehen. Headless-Tests merkten das nicht, weil Software-Rendering den Canvas normal komponiert. `desynchronized` ist entfernt.
+- **`InkEditor`:** Leiste, Fläche, Eingabe und Hintergrund sind zusammengefasst und werden vom Block und von der ausgeklappten Ansicht genutzt. Jede Ansicht hat ihr eigenes `commit`, das nur die *anderen* Ansichten benachrichtigt (sonst baut sich die gerade benutzte Ansicht nach jedem Strich neu auf). `plugin.editors` ersetzt die Block-Liste für die „wird gerade gezeichnet?“-Prüfung der Texterkennung.
+- **Ausklappen:** Ein Obsidian-Modal (96 vw × 94 vh) mit eigener Store-Referenz (der Block kann währenddessen neu gerendert werden) und eigenem Tastatur-Scope für Strg+Z/Y. Die Texterkennung zielt weiter auf den Block in der Notiz.
+- **Einbettungen beschriften:** Der Button wird erst beim Überfahren angehängt (Embeds rendern asynchron bzw. als CM-Widgets). Die Zeile kommt in Live Preview über `cm.posAtDOM`, sonst über die erste Zeile mit dieser Einbettung. Die Einbettung wird durch Arbeitsblatt-Blöcke ersetzt (Text davor/danach bleibt als eigene Absätze). Hinweis: Links in Codeblöcken zählt Obsidian nicht als Backlink.

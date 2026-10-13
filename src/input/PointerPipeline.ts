@@ -228,7 +228,7 @@ export class PointerPipeline {
 	}
 
 	private scroller(): HTMLElement | null {
-		return this.surface.el.closest<HTMLElement>(".cm-scroller, .markdown-preview-view");
+		return this.surface.el.closest<HTMLElement>(".ink-expanded-scroll, .cm-scroller, .markdown-preview-view");
 	}
 
 	private scheduleLive() {

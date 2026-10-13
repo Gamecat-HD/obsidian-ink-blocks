@@ -1,15 +1,13 @@
 import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, type TAbstractFile, type TFile } from "obsidian";
-import { PointerPipeline } from "../input/PointerPipeline";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
 import type { OcrTarget } from "../ocr/OcrService";
-import { opBounds, type InkOp } from "../model/ops";
-import { backgroundKind, measureBackground, PageBackground } from "../render/background";
-import { Surface } from "../render/Surface";
+import { backgroundKind, measureBackground } from "../render/background";
 import type { BgStyle } from "../settings";
 import type { InkEntry, InkEvent } from "../store/InkStore";
-import { Toolbar } from "../ui/Toolbar";
+import { ExpandModal } from "../ui/ExpandModal";
 import { parseBgLink } from "./bgLink";
+import { InkEditor, type ResolvedBackground } from "./InkEditor";
 import { writeBlockField } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
 
@@ -21,10 +19,7 @@ const BG_CYCLE: BgStyle[] = ["ruled", "grid", "blank"];
  */
 export class InkBlockChild extends MarkdownRenderChild {
 	private entry: InkEntry | null = null;
-	private surface: Surface | null = null;
-	private pipeline: PointerPipeline | null = null;
-	private toolbar: Toolbar | null = null;
-	private background: PageBackground | null = null;
+	private editor: InkEditor | null = null;
 	private fields: BlockFields;
 	private alive = false;
 
@@ -64,10 +59,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 
 	/** Nach Theme- oder Einstellungswechsel neu zeichnen. */
 	refresh() {
-		this.surface?.setBgStyle(this.bgStyle);
-		this.surface?.redrawAll();
-		this.toolbar?.update();
-		if (this.surface) this.renderCaption();
+		this.editor?.refresh();
+		if (this.editor) this.renderCaption();
 	}
 
 	/** Erkannter Text (aus `text:`) dezent unter der Fläche; Klick klappt auf/zu. */
@@ -85,7 +78,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 	}
 
 	updateToolbar() {
-		this.toolbar?.update();
+		this.editor?.toolbar.update();
 	}
 
 	/** Deaktiviert den Block, wenn `target` außerhalb liegt. */
@@ -99,14 +92,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 	}
 
 	private teardown() {
-		this.background?.destroy();
-		this.background = null;
-		this.pipeline?.destroy();
-		this.surface?.destroy();
-		this.toolbar?.destroy();
-		this.pipeline = null;
-		this.surface = null;
-		this.toolbar = null;
+		this.editor?.destroy();
+		this.editor = null;
 	}
 
 	private async mount() {
@@ -148,17 +135,9 @@ export class InkBlockChild extends MarkdownRenderChild {
 			this.entry = null;
 			void this.mount();
 		} else if (this.entry) {
-			// Neu geladen (Sync) oder von einem anderen Block derselben Datei geändert.
-			this.surface?.setDoc(this.entry.doc);
-			this.toolbar?.update();
+			// Neu geladen (Sync) oder in einer anderen Ansicht derselben Datei geändert.
+			this.editor?.setDoc();
 		}
-	};
-
-	private readonly onOp = (op: InkOp) => {
-		const entry = this.entry;
-		if (!entry) return;
-		entry.history.push(op);
-		this.commit();
 	};
 
 	private commit() {
@@ -166,7 +145,6 @@ export class InkBlockChild extends MarkdownRenderChild {
 		if (!entry) return;
 		this.plugin.store.touch(entry);
 		this.plugin.store.changed(entry, this.onStoreEvent);
-		this.toolbar?.update();
 		const target = this.ocrTarget();
 		if (target) this.plugin.ocr.schedule(target);
 	}
@@ -182,7 +160,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 			inkPath,
 			notePath: ctx.sourcePath,
 			hint: () => (containerEl.isConnected ? ctx.getSectionInfo(containerEl)?.lineStart : undefined),
-			busy: () => [...this.plugin.blocks].some((b) => b.entry === entry && b.pipeline?.active),
+			busy: () => [...this.plugin.editors].some((e) => e.entry === entry && e.busy),
 			beforeWrite: () => {
 				for (const b of this.plugin.blocks) {
 					if (b.entry !== entry) continue;
@@ -193,28 +171,25 @@ export class InkBlockChild extends MarkdownRenderChild {
 		};
 	}
 
-	private undo() {
-		const entry = this.entry;
-		const op = entry && entry.history.undo(entry.doc);
-		if (op) this.afterHistory(op);
-	}
-
-	private redo() {
-		const entry = this.entry;
-		const op = entry && entry.history.redo(entry.doc);
-		if (op) this.afterHistory(op);
-	}
-
-	private afterHistory(op: InkOp) {
-		this.surface?.resize();
-		this.surface?.redraw(opBounds(op));
-		this.commit();
-	}
-
 	private readonly activate = () => {
 		this.containerEl.addClass("is-active");
-		this.surface?.el.focus({ preventScroll: true });
+		this.editor?.surface.el.focus({ preventScroll: true });
 	};
+
+	/** Große Schreibfläche im Dialog öffnen (gleiche Datei, Texterkennung zielt weiter auf diesen Block). */
+	private expand() {
+		const path = this.path;
+		if (!path || !this.entry) return;
+		this.releaseFocus();
+		new ExpandModal({
+			plugin: this.plugin,
+			inkPath: path,
+			bgStyle: () => this.bgStyle,
+			cycleBg: () => this.cycleBg(),
+			background: this.resolveBackground(),
+			ocrTarget: () => this.ocrTarget(),
+		}).open();
+	}
 
 	/**
 	 * Fokus/Auswahl aus dem Widget nehmen, bevor der Blockinhalt geschrieben wird – sonst übernimmt
@@ -232,11 +207,11 @@ export class InkBlockChild extends MarkdownRenderChild {
 		const mod = e.ctrlKey || e.metaKey;
 		const key = e.key.toLowerCase();
 		let handled = true;
-		if (mod && key === "z" && !e.shiftKey) this.undo();
-		else if (mod && ((key === "z" && e.shiftKey) || key === "y")) this.redo();
+		if (mod && key === "z" && !e.shiftKey) this.editor?.undo();
+		else if (mod && ((key === "z" && e.shiftKey) || key === "y")) this.editor?.redo();
 		else if (e.key === "Escape") {
 			this.containerEl.removeClass("is-active");
-			this.surface?.el.blur();
+			this.editor?.surface.el.blur();
 		} else handled = false;
 		if (handled) {
 			// Nicht an CodeMirror weiterreichen – sonst würde zusätzlich der Notiztext rückgängig gemacht.
@@ -252,8 +227,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 		const hint = this.ctx.getSectionInfo(this.containerEl)?.lineStart;
 		// Live Preview rendert den Block danach neu; Dokument und Undo bleiben im Store.
 		this.fields.bgStyle = next;
-		this.surface?.setBgStyle(next);
-		this.toolbar?.update();
+		this.editor?.refresh();
 		this.releaseFocus();
 		void writeBlockField(this.plugin.app, this.ctx.sourcePath, path, "bgStyle", next, hint);
 	}
@@ -264,22 +238,22 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.teardown();
 		this.containerEl.empty();
 		this.containerEl.removeClass("is-message");
-		this.toolbar = new Toolbar(this.containerEl, this.plugin, {
-			undo: () => this.undo(),
-			redo: () => this.redo(),
-			canUndo: () => !!this.entry?.history.canUndo,
-			canRedo: () => !!this.entry?.history.canRedo,
-			bgStyle: () => (this.entry?.doc.space === "nb" ? this.bgStyle : null),
+		const background = this.resolveBackground();
+		// Leeres Heft mit nachträglich eingetragenem bg: → in ein Arbeitsblatt umwandeln.
+		if (background && !("error" in background) && entry.doc.space === "nb" && entry.doc.strokes.length === 0) {
+			void this.convertToPage(entry, background.file, background.page);
+		}
+		this.editor = new InkEditor(this.containerEl, {
+			plugin: this.plugin,
+			entry,
+			bgStyle: () => this.bgStyle,
 			cycleBg: () => this.cycleBg(),
+			background: entry.doc.space === "page" || !background || "error" in background ? background : null,
+			commit: () => this.commit(),
+			activate: this.activate,
+			toggleExpand: () => this.expand(),
 		});
-		// Klick auf die Leiste aktiviert den Block ebenfalls (Capture: die Leiste stoppt die Propagation).
-		this.toolbar.el.addEventListener("pointerdown", this.activate, { capture: true });
-		this.surface = new Surface(this.containerEl, entry.doc, this.bgStyle);
-		this.surface.el.dataset.path = entry.path;
-		this.surface.el.tabIndex = -1;
-		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp, this.activate);
 		this.renderCaption();
-		this.setupBackground(entry);
 		if (entry.reactivate) {
 			entry.reactivate = false;
 			this.activate();
@@ -287,31 +261,13 @@ export class InkBlockChild extends MarkdownRenderChild {
 	}
 
 	/** `bg:`-Link auflösen (relativ zur Notiz); `null` + Fehlermeldung, wenn die Datei fehlt. */
-	private resolveBackground(): { file: TFile; page: number } | { error: string } | null {
+	private resolveBackground(): ResolvedBackground {
 		const link = parseBgLink(this.fields.bg);
 		if (!link) return null;
 		const file = this.plugin.app.metadataCache.getFirstLinkpathDest(link.linkpath, this.ctx.sourcePath);
 		if (!file) return { error: `Hintergrund nicht gefunden: ${link.linkpath}` };
 		if (!backgroundKind(file)) return { error: `Kein PDF/Bild: ${file.path}` };
 		return { file, page: link.page ?? 1 };
-	}
-
-	private setupBackground(entry: InkEntry) {
-		const surface = this.surface;
-		const bg = this.resolveBackground();
-		if (!bg || !surface) return;
-		if ("error" in bg) {
-			surface.showOverlay(bg.error);
-			return;
-		}
-		// Leeres Heft mit nachträglich eingetragenem bg: → in ein Arbeitsblatt umwandeln.
-		if (entry.doc.space === "nb" && entry.doc.strokes.length === 0) {
-			void this.convertToPage(entry, bg.file, bg.page);
-			return;
-		}
-		this.background = new PageBackground(this.plugin.app, bg.file, bg.page, surface.bgEl, (msg) => surface.showOverlay(msg));
-		surface.onLayout = (w, dpr) => this.background?.update(w, dpr);
-		surface.layout(true);
 	}
 
 	private async convertToPage(entry: InkEntry, file: TFile, page: number) {
@@ -324,7 +280,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 			this.plugin.store.changed(entry, this.onStoreEvent);
 			this.render();
 		} catch (e) {
-			this.surface?.showOverlay(`Hintergrund: ${(e as Error).message}`);
+			this.editor?.surface.showOverlay(`Hintergrund: ${(e as Error).message}`);
 		}
 	}
 

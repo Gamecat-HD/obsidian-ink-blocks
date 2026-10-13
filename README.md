@@ -10,6 +10,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 |---|---|
 | **Schreibfläche einfügen** | Neue Heft-Fläche an der Cursorposition (volle Breite, wächst beim Schreiben nach unten) |
 | **Arbeitsblatt einfügen (PDF/Bild)** | PDF/Bild aus dem Vault wählen, bei PDFs eine Seite oder alle → je Seite eine Fläche mit der Seite als Hintergrund |
+| **Bild/PDF in dieser Zeile beschriftbar machen** | Ersetzt ein eingebettetes `![[bild.png]]`/`![[blatt.pdf]]` der Zeile durch beschriftbare Arbeitsblatt-Flächen (alternativ: Button „Beschriften“ beim Überfahren der Einbettung) |
 | **Handschrift in dieser Notiz erkennen** | Sofort erkennen (überschreibt auch selbst bearbeiteten `text:`) |
 | **Texterkennung: Modelle herunterladen** | Einmaliger Download des Erkennungsmodells (siehe unten) |
 | **OCR-Messung: Notiz mit 30 Testsätzen anlegen** / **auswerten** | Erkennungsqualität mit der eigenen Handschrift messen (Zeichenfehlerrate) |
@@ -21,6 +22,8 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Mit Stift oder Maus schreiben.
 - Radieren über das Radierer-Werkzeug, das Radierer-Ende oder die Seitentaste des Stifts.
 - Finger scrollen (Einstellung „Nur Stift zeichnet“).
+- **Ausklappen** (Button ⤢ in der Leiste): öffnet dieselbe Fläche groß im Fenster, wie hineingezoomt. Ideal zum bequemen Schreiben und zum Ausfüllen von Arbeitsblättern. Esc oder ⤡ klappt wieder ein; alles landet sofort im Block.
+- **Eingebettete Bilder/PDFs:** Beim Überfahren erscheint „Beschriften“. Ein Klick macht daraus Arbeitsblatt-Flächen mit dem Bild bzw. der PDF-Seite als Hintergrund (bei PDFs Seite oder alle Seiten wählbar).
 - Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, 3 Farben, 2 Breiten, Rückgängig/Wiederholen und den Hintergrund (liniert, kariert, leer).
 - **Strg+Z / Strg+Umschalt+Z / Strg+Y** wirken auf die Tinte, solange der Block aktiv ist, also nach dem Antippen. Ein Klick in den Text gibt die Tasten wieder an den Editor.
 - Der **erkannte Text** steht dezent unter der Fläche (Klick klappt ihn auf) und im Feld `text:` des Blocks. Darüber finden ihn die Obsidian-Suche, Omnisearch und die Lernplattform.

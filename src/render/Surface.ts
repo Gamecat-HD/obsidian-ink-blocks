@@ -49,7 +49,9 @@ export class Surface {
 		this.bgEl = this.el.createDiv({ cls: "ink-bg" });
 		this.tilesEl = this.el.createDiv({ cls: "ink-tiles" });
 		this.live = this.el.createEl("canvas", { cls: "ink-live" });
-		const ctx = this.live.getContext("2d", { desynchronized: true });
+		// Kein `desynchronized`: unter Linux/Wayland mit GPU-Compositing wird ein solcher Canvas teils erst
+		// nach dem Strich angezeigt (Live-Strich unsichtbar).
+		const ctx = this.live.getContext("2d");
 		if (!ctx) throw new Error("Canvas 2D nicht verfügbar");
 		this.liveCtx = ctx;
 

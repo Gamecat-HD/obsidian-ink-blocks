@@ -29,13 +29,24 @@ export class WorksheetFileModal extends FuzzySuggestModal<TFile> {
 
 /** Auswahl der Seite(n) eines mehrseitigen PDFs. `0` = alle Seiten. */
 export class WorksheetPageModal extends FuzzySuggestModal<number> {
+	private picked = false;
+
 	constructor(
 		app: App,
 		private readonly pageCount: number,
 		private readonly onPick: (pages: number[]) => void,
+		private readonly onCancel?: () => void,
 	) {
 		super(app);
 		this.setPlaceholder(`Seite wählen (1–${pageCount}) …`);
+	}
+
+	onClose() {
+		super.onClose();
+		// Obsidian ruft onChooseItem erst nach onClose auf → Abbruch erst verzögert melden.
+		window.setTimeout(() => {
+			if (!this.picked) this.onCancel?.();
+		}, 0);
 	}
 
 	getItems(): number[] {
@@ -47,6 +58,7 @@ export class WorksheetPageModal extends FuzzySuggestModal<number> {
 	}
 
 	onChooseItem(page: number) {
+		this.picked = true;
 		this.onPick(page === 0 ? this.getItems().slice(1) : [page]);
 	}
 }

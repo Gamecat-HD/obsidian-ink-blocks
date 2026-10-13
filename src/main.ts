@@ -1,7 +1,9 @@
 import { debounce, loadPdfJs, Plugin } from "obsidian";
 import { InkBlockChild } from "./block/InkBlockChild";
+import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
 import { OcrService } from "./ocr/OcrService";
+import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { DEFAULT_SETTINGS, InkSettingTab, type InkSettings } from "./settings";
 import { InkStore } from "./store/InkStore";
 
@@ -10,6 +12,8 @@ export default class InkBlocksPlugin extends Plugin {
 	store!: InkStore;
 	ocr!: OcrService;
 	readonly blocks = new Set<InkBlockChild>();
+	/** Alle offenen Zeichenansichten (Blöcke und ausgeklappte Ansicht). */
+	readonly editors = new Set<InkEditor>();
 	/** Zugriff für die E2E-Tests (scripts/e2e). */
 	readonly dev: { loadPdfJs: typeof loadPdfJs; loaded: number; unloaded: number; rewriteUrl?: (url: string) => string } = {
 		loadPdfJs,
@@ -26,6 +30,7 @@ export default class InkBlocksPlugin extends Plugin {
 			ctx.addChild(new InkBlockChild(el, source, ctx, this));
 		});
 		registerCommands(this);
+		new EmbedAnnotator(this);
 		this.registerEvent(this.app.workspace.on("css-change", () => this.refreshBlocks()));
 		// Klick außerhalb des aktiven Blocks deaktiviert ihn (Strg+Z gehört dann wieder dem Editor).
 		this.registerDomEvent(document, "pointerdown", (e) => {
