@@ -187,3 +187,8 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **Radieren über mehrere Schritte:** Die Erase-Op speichert die Indizes vom Beginn der Geste, damit Undo die ursprüngliche Reihenfolge exakt wiederherstellt.
 - **Druck:** Stifte, die durchgehend 0,5 melden (kein Drucksensor), werden wie Maus behandelt (`simulated`).
 - **Lazy-Init:** Ein eigener IntersectionObserver vor dem Laden war nicht nötig. Kacheln bekommen ihren Backing-Store erst, wenn sie sichtbar werden. Gemessen: 10 Blöcke × 150 Striche sind nach ca. 75 ms gezeichnet.
+- **`bg:`-Format (M4):** `"[[Datei.pdf#page=2]]"`, also Obsidians eigene Link-Syntax mit Seite, kürzester Linktext relativ zur Notiz. Geparst werden auch `![[…|Alias]]`, `[[…]]#page=N` und Links ohne Klammern (`block/bgLink.ts`).
+- **Umbenennen von Hintergründen:** Obsidian aktualisiert Links in Codeblöcken nicht. Der InkStore zieht deshalb beim Umbenennen bzw. Verschieben von PDFs/Bildern (und Ordnern) die `bg:`-Felder nach, ebenso `file:`, jeweils nur innerhalb echter ink-Fences.
+- **Leeres Heft + `bg:`:** Ein leerer Heft-Block, dem man von Hand ein `bg:` gibt, wird automatisch zum Arbeitsblatt (Größe des Hintergrunds).
+- **Rand:** Koordinaten beziehen sich auf die Innenkante der Fläche (`clientLeft/clientTop`). Vorher lag alles um den 1-px-Rahmen versetzt.
+- **E2E-Harness:** Der Button „Vertrauen“ im Trust-Dialog von Obsidian 1.14 hinterlässt einen Zustand, in dem keine Modals mehr öffnen. Der Harness schließt den Dialog deshalb per X; die Plugins sind über `setEnable` bereits aktiv.

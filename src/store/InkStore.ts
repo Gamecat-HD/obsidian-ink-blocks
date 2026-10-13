@@ -3,6 +3,10 @@ import type InkBlocksPlugin from "../main";
 import { History } from "../model/history";
 import { decodeInk, encodeInk, type InkData } from "../model/ink-format";
 import { mergeInk } from "../model/merge";
+import { formatBgLink, linkMatchesPath, parseBgLink } from "../block/bgLink";
+import { findInkFences, replaceFenceBody } from "../block/locate";
+import { parseBlock, setField } from "../block/source";
+import { backgroundKind } from "../render/background";
 
 export type InkEvent = "reloaded" | "deleted" | "changed";
 export type InkListener = (event: InkEvent) => void;
@@ -174,32 +178,55 @@ export class InkStore {
 		this.emit(entry, "deleted");
 	}
 
-	/** Verschobene/umbenannte .ink-Dateien (oder Ordner): `file:`-Zeilen in allen Notizen nachziehen. */
+	/**
+	 * Umbenannte/verschobene .ink-Dateien, Hintergründe (PDF/Bild) oder Ordner: `file:`- und `bg:`-Felder
+	 * in den ink-Blöcken aller Notizen nachziehen. Obsidian aktualisiert Links in Codeblöcken nicht selbst.
+	 */
 	private async onRename(file: TAbstractFile, oldPath: string) {
+		const isFolder = file instanceof TFolder;
 		const isInk = file instanceof TFile && file.extension === "ink";
-		if (!isInk && !(file instanceof TFolder)) return;
+		const bgFile = file instanceof TFile && backgroundKind(file) ? file : null;
+		if (!isFolder && !isInk && !bgFile) return;
 
-		const entry = this.entries.get(oldPath);
-		if (entry) {
-			this.entries.delete(oldPath);
-			entry.path = file.path;
-			this.entries.set(file.path, entry);
+		for (const [path, entry] of [...this.entries]) {
+			const moved = path === oldPath ? file.path : isFolder && path.startsWith(oldPath + "/") ? file.path + path.slice(oldPath.length) : null;
+			if (!moved) continue;
+			this.entries.delete(path);
+			entry.path = moved;
+			this.entries.set(moved, entry);
 		}
 
-		const mapPath = (p: string) =>
-			p === oldPath ? file.path : isInk ? null : p.startsWith(oldPath + "/") ? file.path + p.slice(oldPath.length) : null;
-		const fileLine = /^(\s*file:\s*)(["']?)(.+?)\2\s*$/gm;
-		const { vault } = this.plugin.app;
+		const movedPath = (p: string): string | null =>
+			p === oldPath ? file.path : isFolder && p.startsWith(oldPath + "/") ? file.path + p.slice(oldPath.length) : null;
+		const { vault, metadataCache } = this.plugin.app;
+		const needle = isFolder || isInk ? oldPath : (oldPath.split("/").pop() ?? oldPath);
+
+		const rewrite = (data: string, notePath: string): string => {
+			for (const fence of findInkFences(data).reverse()) {
+				let body = fence.body;
+				const fields = parseBlock(body);
+				if (fields.file && (isInk || isFolder)) {
+					const moved = movedPath(normalizePath(fields.file));
+					if (moved) body = setField(body, "file", moved);
+				}
+				const link = parseBgLink(fields.bg);
+				if (link) {
+					if (bgFile && linkMatchesPath(link.linkpath, oldPath)) {
+						body = setField(body, "bg", formatBgLink(metadataCache.fileToLinktext(bgFile, notePath, false), link.page));
+					} else if (isFolder) {
+						const moved = movedPath(link.linkpath);
+						if (moved) body = setField(body, "bg", formatBgLink(moved, link.page));
+					}
+				}
+				if (body !== fence.body) data = replaceFenceBody(data, fence, body);
+			}
+			return data;
+		};
 
 		for (const note of vault.getMarkdownFiles()) {
 			const text = await vault.cachedRead(note);
-			if (!text.includes(oldPath)) continue;
-			await vault.process(note, (data) =>
-				data.replace(fileLine, (line, prefix: string, quote: string, p: string) => {
-					const mapped = mapPath(normalizePath(p));
-					return mapped ? `${prefix}${quote}${mapped}${quote}` : line;
-				}),
-			);
+			if (!text.includes(needle) || !text.includes("ink")) continue;
+			await vault.process(note, (data) => rewrite(data, note.path));
 		}
 	}
 }

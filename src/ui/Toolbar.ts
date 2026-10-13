@@ -8,7 +8,7 @@ export interface ToolbarActions {
 	redo(): void;
 	canUndo(): boolean;
 	canRedo(): boolean;
-	/** `null` = kein Hintergrund-Umschalter (z. B. Arbeitsblatt). */
+	/** `null` = kein Hintergrund-Umschalter (Arbeitsblatt – dort ist „Tinte“ schwarz). */
 	bgStyle(): BgStyle | null;
 	cycleBg(): void;
 }
@@ -99,9 +99,11 @@ export class Toolbar {
 		const hl = t.tool === "hl";
 		const palette = hl ? HL_COLORS : PEN_COLORS;
 		const current = hl ? t.hlColor : t.penColor;
+		const bg = this.actions.bgStyle();
+		const ink = bg === null ? "#111" : "var(--text-normal)";
 		this.swatches.forEach((sw, i) => {
 			const index = palette[i];
-			sw.style.setProperty("--swatch", PALETTE[index] === "ink" ? "var(--text-normal)" : PALETTE[index]);
+			sw.style.setProperty("--swatch", PALETTE[index] === "ink" ? ink : PALETTE[index]);
 			sw.toggleClass("is-active", index === current);
 			sw.dataset.color = String(index);
 			setTooltip(sw, `Farbe ${i + 1}`);
@@ -112,7 +114,6 @@ export class Toolbar {
 
 		this.undoBtn.toggleClass("is-disabled", !this.actions.canUndo());
 		this.redoBtn.toggleClass("is-disabled", !this.actions.canRedo());
-		const bg = this.actions.bgStyle();
 		this.bgBtn.toggle(bg !== null);
 		if (bg) {
 			setIcon(this.bgBtn, BG_ICON[bg].icon);

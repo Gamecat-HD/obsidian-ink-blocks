@@ -58,6 +58,11 @@ export function createNotebook(id: string): InkData {
 	return { v: 1, id, space: "nb", w: NB_WIDTH, h: NB_MIN_HEIGHT, strokes: [] };
 }
 
+/** Arbeitsblatt: Koordinaten in nativen Einheiten des Hintergrunds (PDF-Punkte bzw. Bildpixel). */
+export function createPage(id: string, bg: InkBackground): InkData {
+	return { v: 1, id, space: "page", w: bg.pw, h: bg.ph, bg, strokes: [] };
+}
+
 export function encodePoints(points: number[], q = Q): number[] {
 	const out: number[] = new Array(points.length);
 	let px = 0;

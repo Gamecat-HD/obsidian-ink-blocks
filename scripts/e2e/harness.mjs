@@ -226,19 +226,20 @@ export async function launch(opts = {}) {
 			if (!app.plugins.enabledPlugins.has(id)) await app.plugins.enablePluginAndSave(id);
 		}, PLUGIN_ID);
 		await waitFor(() => h.evaluate((id) => !!app.plugins.plugins[id], PLUGIN_ID), { what: "Plugin geladen" });
-		// "Vertraust du dem Ersteller …"-Dialog schließen (Plugins sind bereits aktiv).
-		await waitFor(
-			() =>
-				h.evaluate(() => {
-					const btn = [...document.querySelectorAll(".mod-trust-folder button")].find((b) =>
-						/vertrauen|trust/i.test(b.textContent ?? ""),
-					);
-					btn?.click();
-					return !!btn;
-				}),
-			{ timeout: 5000, what: "Vertrauens-Dialog" },
-		).catch(() => {});
-		await sleep(200);
+		// "Vertraust du dem Ersteller …"-Dialog per X schließen. Die Plugins sind über setEnable bereits aktiv.
+		// (Der Button "Vertrauen" hinterlässt in Obsidian 1.14 einen Zustand, in dem keine Modals mehr öffnen.)
+		if (opts.trust !== false) {
+			await waitFor(
+				() =>
+					h.evaluate(() => {
+						const x = document.querySelector(".mod-trust-folder .modal-header-button, .mod-trust-folder .modal-close-button");
+						x?.click();
+						return !!x;
+					}),
+				{ timeout: 5000, what: "Vertrauens-Dialog" },
+			).catch(() => {});
+			await sleep(200);
+		}
 	} catch (e) {
 		await h.close();
 		throw new Error(`${e.message}\n--- Obsidian-Log ---\n${procLog.join("").slice(-3000)}`);

@@ -22,6 +22,11 @@ interface TileState {
  */
 export class Surface {
 	readonly el: HTMLElement;
+	/** Ebene für den Arbeitsblatt-Hintergrund (PDF-Seite/Bild), unter den Strichen. */
+	readonly bgEl: HTMLElement;
+	/** Wird nach jedem Layout mit Breite (CSS-px) und DPR aufgerufen. */
+	onLayout: ((cssWidth: number, dpr: number) => void) | null = null;
+	private overlay: HTMLElement | null = null;
 	private readonly tilesEl: HTMLElement;
 	private readonly live: HTMLCanvasElement;
 	private readonly liveCtx: CanvasRenderingContext2D;
@@ -41,6 +46,7 @@ export class Surface {
 		private bgStyle: BgStyle,
 	) {
 		this.el = parent.createDiv({ cls: "ink-surface" });
+		this.bgEl = this.el.createDiv({ cls: "ink-bg" });
 		this.tilesEl = this.el.createDiv({ cls: "ink-tiles" });
 		this.live = this.el.createEl("canvas", { cls: "ink-live" });
 		const ctx = this.live.getContext("2d", { desynchronized: true });
@@ -78,13 +84,23 @@ export class Surface {
 		this.applyPattern();
 	}
 
-	/** Clientkoordinaten → Doc-Einheiten. */
+	/** Clientkoordinaten → Doc-Einheiten (relativ zur Innenkante, ohne Rahmen). */
 	toDoc(clientX: number, clientY: number): { x: number; y: number } {
 		const r = this.el.getBoundingClientRect();
-		return { x: (clientX - r.left) / this.scale, y: (clientY - r.top) / this.scale };
+		return {
+			x: (clientX - r.left - this.el.clientLeft) / this.scale,
+			y: (clientY - r.top - this.el.clientTop) / this.scale,
+		};
+	}
+
+	/** Hinweis über der Fläche (z. B. fehlender Hintergrund); `null` entfernt ihn. */
+	showOverlay(message: string | null) {
+		this.overlay?.remove();
+		this.overlay = message ? this.el.createDiv({ cls: "ink-overlay", text: message }) : null;
 	}
 
 	private updateSize() {
+		this.el.dataset.space = this.doc.space;
 		this.el.style.aspectRatio = `${this.doc.w} / ${this.doc.h}`;
 		this.el.dataset.strokes = String(this.doc.strokes.length);
 	}
@@ -99,6 +115,7 @@ export class Surface {
 		this.dpr = dpr;
 		this.scale = scaleFor(this.doc.w, width);
 		this.applyPattern();
+		this.onLayout?.(width, dpr);
 
 		const wanted = tileLayout(this.doc.h * this.scale);
 		let keep = 0;
@@ -199,8 +216,10 @@ export class Surface {
 	/** Live-Canvas über den aktuell sichtbaren Teil der Fläche legen (während eines Strichs wird nicht gescrollt). */
 	beginLive() {
 		const r = this.el.getBoundingClientRect();
-		const top = Math.max(0, -r.top);
-		const bottom = Math.min(r.height, window.innerHeight - r.top);
+		const innerTop = r.top + this.el.clientTop;
+		const innerHeight = this.el.clientHeight;
+		const top = Math.max(0, -innerTop);
+		const bottom = Math.min(innerHeight, window.innerHeight - innerTop);
 		const height = Math.max(1, bottom - top);
 		this.liveTop = top;
 		this.live.style.top = `${top}px`;

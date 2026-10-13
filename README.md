@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **M3 fertig** (Phase 1 komplett): Schreibfläche mit schwebender Werkzeugleiste, Stift/Textmarker/Radierer, Undo/Redo (Strg+Z bei aktivem Block), Hintergrund liniert/kariert/leer, wächst beim Schreiben nach unten. Als Nächstes: Arbeitsblätter (M4). Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
+> Status: **M4 fertig** (Phase 2 komplett): Schreibflächen mit Werkzeugleiste, Undo/Redo und Mitwachsen (Phase 1) sowie **Arbeitsblätter**: PDF-Seiten oder Bilder als Hintergrund, Befehl „Arbeitsblatt einfügen“ (einzelne oder alle Seiten). Als Nächstes: lokale Texterkennung (M5). Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
 
 ## Dokumentation
 

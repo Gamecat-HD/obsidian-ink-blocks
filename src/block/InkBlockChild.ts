@@ -1,12 +1,14 @@
-import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, type TAbstractFile } from "obsidian";
+import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, type TAbstractFile, type TFile } from "obsidian";
 import { PointerPipeline } from "../input/PointerPipeline";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
 import { opBounds, type InkOp } from "../model/ops";
+import { backgroundKind, measureBackground, PageBackground } from "../render/background";
 import { Surface } from "../render/Surface";
 import type { BgStyle } from "../settings";
 import type { InkEntry, InkEvent } from "../store/InkStore";
 import { Toolbar } from "../ui/Toolbar";
+import { parseBgLink } from "./bgLink";
 import { writeBlockField } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
 
@@ -21,6 +23,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 	private surface: Surface | null = null;
 	private pipeline: PointerPipeline | null = null;
 	private toolbar: Toolbar | null = null;
+	private background: PageBackground | null = null;
 	private fields: BlockFields;
 	private alive = false;
 
@@ -80,6 +83,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 	}
 
 	private teardown() {
+		this.background?.destroy();
+		this.background = null;
 		this.pipeline?.destroy();
 		this.surface?.destroy();
 		this.toolbar?.destroy();
@@ -233,6 +238,49 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.surface.el.dataset.path = entry.path;
 		this.surface.el.tabIndex = -1;
 		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp, this.activate);
+		this.setupBackground(entry);
+	}
+
+	/** `bg:`-Link auflösen (relativ zur Notiz); `null` + Fehlermeldung, wenn die Datei fehlt. */
+	private resolveBackground(): { file: TFile; page: number } | { error: string } | null {
+		const link = parseBgLink(this.fields.bg);
+		if (!link) return null;
+		const file = this.plugin.app.metadataCache.getFirstLinkpathDest(link.linkpath, this.ctx.sourcePath);
+		if (!file) return { error: `Hintergrund nicht gefunden: ${link.linkpath}` };
+		if (!backgroundKind(file)) return { error: `Kein PDF/Bild: ${file.path}` };
+		return { file, page: link.page ?? 1 };
+	}
+
+	private setupBackground(entry: InkEntry) {
+		const surface = this.surface;
+		const bg = this.resolveBackground();
+		if (!bg || !surface) return;
+		if ("error" in bg) {
+			surface.showOverlay(bg.error);
+			return;
+		}
+		// Leeres Heft mit nachträglich eingetragenem bg: → in ein Arbeitsblatt umwandeln.
+		if (entry.doc.space === "nb" && entry.doc.strokes.length === 0) {
+			void this.convertToPage(entry, bg.file, bg.page);
+			return;
+		}
+		this.background = new PageBackground(this.plugin.app, bg.file, bg.page, surface.bgEl, (msg) => surface.showOverlay(msg));
+		surface.onLayout = (w, dpr) => this.background?.update(w, dpr);
+		surface.layout(true);
+	}
+
+	private async convertToPage(entry: InkEntry, file: TFile, page: number) {
+		try {
+			const info = await measureBackground(this.plugin.app, file, page);
+			if (!this.alive || this.entry !== entry || entry.doc.strokes.length) return;
+			Object.assign(entry.doc, { space: "page", w: info.pw, h: info.ph, bg: info });
+			entry.history.clear();
+			this.plugin.store.touch(entry);
+			this.plugin.store.changed(entry, this.onStoreEvent);
+			this.render();
+		} catch (e) {
+			this.surface?.showOverlay(`Hintergrund: ${(e as Error).message}`);
+		}
 	}
 
 	private showMessage(title: string, detail?: string) {
