@@ -1,6 +1,7 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
+import { straightLine } from "../model/shapes";
 import { outlinePath } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
@@ -27,6 +28,10 @@ type Gesture =
 			color: number;
 			size: number;
 			simulated: boolean;
+			/** Textmarker als gerade Linie (Lineal): Punkte = Strecke vom Start zum Stift. */
+			straight: boolean;
+			x0: number;
+			y0: number;
 			points: number[];
 			hStart: number;
 	  }
@@ -122,6 +127,9 @@ export class PointerPipeline {
 			color: hl ? tools.hlColor : tools.penColor,
 			size: hl ? settings.hlSizes[tools.hlWidth] : settings.penSizes[tools.penWidth],
 			simulated,
+			straight: hl && settings.hlStraight,
+			x0: x,
+			y0: y,
 			points: [x, y, simulated ? 0.5 : e.pressure],
 			hStart: this.entry.doc.h,
 		};
@@ -136,6 +144,14 @@ export class PointerPipeline {
 		if (g.kind === "scroll") {
 			if (g.scroller) g.scroller.scrollTop -= e.clientY - g.lastY;
 			g.lastY = e.clientY;
+			return;
+		}
+
+		if (g.kind === "draw" && g.straight) {
+			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			g.points = straightLine(g.x0, g.y0, x, y);
+			this.maybeGrow(y);
+			this.renderLive();
 			return;
 		}
 

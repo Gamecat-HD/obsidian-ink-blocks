@@ -49,6 +49,7 @@ export class Toolbar {
 	private readonly undoBtn: HTMLElement;
 	private readonly redoBtn: HTMLElement;
 	private readonly bgBtn: HTMLElement;
+	private readonly straightBtn: HTMLElement;
 
 	constructor(
 		parent: HTMLElement,
@@ -74,8 +75,12 @@ export class Toolbar {
 			this.toolButtons.set(t.id, btn);
 		}
 
+		// Lineal: nur beim Textmarker sichtbar.
+		this.straightBtn = this.button(tools, "ruler", "Gerade Linien (Lineal)", () => this.toggleStraight());
+		this.straightBtn.addClass("ink-tb-straight");
+
 		const colors = this.group();
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < Math.max(PEN_COLORS.length, HL_COLORS.length); i++) {
 			const sw = colors.createEl("button", { cls: "ink-tb-swatch clickable-icon" });
 			sw.addEventListener("click", () => this.setColor(i));
 			this.swatches.push(sw);
@@ -117,8 +122,12 @@ export class Toolbar {
 		const current = hl ? t.hlColor : t.penColor;
 		const pattern = this.actions.pattern();
 		const ink = pattern === null ? "#111" : "var(--text-normal)";
+		this.straightBtn.toggle(hl);
+		this.straightBtn.toggleClass("is-active", this.plugin.settings.hlStraight);
 		this.swatches.forEach((sw, i) => {
 			const index = palette[i];
+			sw.toggle(index !== undefined);
+			if (index === undefined) return;
 			sw.style.setProperty("--swatch", PALETTE[index] === "ink" ? ink : PALETTE[index]);
 			sw.toggleClass("is-active", index === current);
 			sw.dataset.color = String(index);
@@ -153,6 +162,11 @@ export class Toolbar {
 
 	private setTool(tool: ToolId) {
 		this.plugin.settings.tools.tool = tool;
+		this.plugin.toolsChanged();
+	}
+
+	private toggleStraight() {
+		this.plugin.settings.hlStraight = !this.plugin.settings.hlStraight;
 		this.plugin.toolsChanged();
 	}
 

@@ -215,6 +215,11 @@
 	background-image: none;
 }
 
+/* Textmarker auf Arbeitsblättern wie echter Marker: multipliziert mit der Seite, gedruckter Text bleibt dunkel. */
+.ink-surface[data-space="page"] .ink-tiles {
+	mix-blend-mode: multiply;
+}
+
 .ink-bg {
 	position: absolute;
 	inset: 0;

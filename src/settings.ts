@@ -51,6 +51,7 @@ export class InkSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Strichbreiten").setDesc("Gelten für neue Striche; Vorhandenes bleibt, wie es ist.").setHeading();
 		this.sizeSliders("Stift", "penSizes", LIMITS.penSize, 0.2);
 		this.sizeSliders("Textmarker", "hlSizes", LIMITS.hlSize, 1);
+		this.toggle("Textmarker zieht gerade Linien", "Wie mit dem Lineal: vom Ansatzpunkt gerade zum Stift, nahe der Waagerechten exakt waagerecht. Auch über den Lineal-Knopf in der Leiste umschaltbar.", "hlStraight", () => this.plugin.toolsChanged());
 
 		new Setting(containerEl).setName("Eingabe").setHeading();
 		this.toggle("Nur Stift zeichnet", "Finger scrollen die Notiz statt zu zeichnen (Handballen werden ignoriert).", "penOnly");
@@ -164,7 +165,7 @@ export class InkSettingTab extends PluginSettingTab {
 	private toggle(
 		name: string,
 		desc: string,
-		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText",
+		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText" | "hlStraight",
 		after?: () => void,
 	) {
 		new Setting(this.containerEl)

@@ -27,6 +27,8 @@ export interface InkSettings {
 	/** Strichbreiten der drei Slots in Doc-Einheiten. */
 	penSizes: WidthSizes;
 	hlSizes: WidthSizes;
+	/** Textmarker zieht gerade Linien (Lineal), nahe der Waagerechten exakt waagerecht. */
+	hlStraight: boolean;
 	/** Finger zeichnen nicht, sondern scrollen (Stift und Maus zeichnen). */
 	penOnly: boolean;
 	/** Maus zeichnet. */
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	gridGap: 25,
 	penSizes: [2.6, 4.6, 7],
 	hlSizes: [16, 28, 40],
+	hlStraight: true,
 	penOnly: true,
 	mouseDraws: true,
 	barrelErases: true,

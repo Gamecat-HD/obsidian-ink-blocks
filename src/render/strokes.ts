@@ -2,10 +2,13 @@ import { getStroke, type StrokeOptions } from "perfect-freehand";
 import type { Space, Stroke, Tool } from "../model/ink-format";
 import { svgPathFromOutline } from "./svgPath";
 
-/** Palette: 0–2 Stift (0 = Tinte), 3–5 Textmarker. */
-export const PALETTE = ["ink", "#1c7ed6", "#e03131", "#fab005", "#40c057", "#f06595"];
+/**
+ * Palette: 0–2 Stift (0 = Tinte), ab 3 Textmarker. Indizes stehen in den .ink-Dateien – neue Farben nur
+ * hinten anhängen.
+ */
+export const PALETTE = ["ink", "#1c7ed6", "#e03131", "#fab005", "#40c057", "#f06595", "#4dabf7", "#ff922b", "#b197fc"];
 export const PEN_COLORS = [0, 1, 2];
-export const HL_COLORS = [3, 4, 5];
+export const HL_COLORS = [3, 4, 5, 6, 7, 8];
 export const HL_ALPHA = 0.35;
 
 interface StrokeStyle {
