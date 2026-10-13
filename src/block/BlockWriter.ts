@@ -1,6 +1,6 @@
 import { MarkdownView, type App, type Editor } from "obsidian";
 import { locateInkFence, replaceFenceBody } from "./locate";
-import { setField } from "./source";
+import { parseBlock, setField } from "./source";
 
 /**
  * Schreibt ein Feld eines ```ink-Blocks zurück in die Notiz.
@@ -51,4 +51,24 @@ function writeViaEditor(editor: Editor, inkPath: string, key: string, value: str
 	const to = { line: fence.close, ch: 0 };
 	editor.replaceRange(body === "" ? "" : body.replace(/\n?$/, "\n"), from, to);
 	return true;
+}
+
+/** Liest ein Feld des Blocks aus der aktuellen Fassung der Notiz (offener Editor oder Datei). */
+export async function readBlockField(
+	app: App,
+	notePath: string,
+	inkPath: string,
+	key: string,
+	hintLine?: number,
+): Promise<string | undefined | null> {
+	const editor = openEditor(app, notePath);
+	let text: string;
+	if (editor) text = editor.getValue();
+	else {
+		const file = app.vault.getFileByPath(notePath);
+		if (!file) return null;
+		text = await app.vault.cachedRead(file);
+	}
+	const found = locateInkFence(text, inkPath, hintLine);
+	return found ? parseBlock(found.fence.body)[key] : null;
 }

@@ -103,7 +103,8 @@ export async function launch(opts = {}) {
 	const pluginDir = join(vault, ".obsidian/plugins", PLUGIN_ID);
 	await mkdir(pluginDir, { recursive: true });
 	for (const f of ["main.js", "manifest.json", "styles.css"]) await cp(join(REPO, f), join(pluginDir, f));
-	if (existsSync(join(REPO, "models"))) await symlink(join(REPO, "models"), join(pluginDir, "models"));
+	// Modelle aus dem Repo verlinken (wie nach einem Download). `models: false` testet den Download selbst.
+	if (opts.models !== false && existsSync(join(REPO, "models"))) await symlink(join(REPO, "models"), join(pluginDir, "models"));
 	await writeFile(join(vault, ".obsidian/community-plugins.json"), JSON.stringify([PLUGIN_ID]));
 	await wf(
 		join(config, "obsidian/obsidian.json"),

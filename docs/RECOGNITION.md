@@ -74,3 +74,32 @@ text: |
   - Import des Vaults von der Platte (`MARKDOWN_VAULT_ROOT`) oder per LiveSync/CouchDB (`src/lib/markdown-source.ts`).
   - Die FTS5-Suche (`src/lib/fts.ts`, `tokenize='unicode61 remove_diacritics 2'`) indiziert Chunk-Inhalte. `markdownToSearchText` (`src/lib/markdown-normalize.ts`) entfernt bei Codeblöcken nur die Fence-Marker. → **Der erkannte Text ist dort ohne Änderung durchsuchbar.** `remove_diacritics` verzeiht dabei sogar Umlaut-Fehler der OCR.
   - Optionaler Folgeschritt dort: In `src/components/app/common/markdown.tsx` einen Zweig für `language-ink` neben `mermaid`/`dgmo` einbauen, der die SVG-Vorschau und den erkannten Text zeigt, statt den rohen Codeblock.
+
+## Umsetzung (M5) und Messwerte
+
+- **Ablauf:**
+  1. Nach einer Änderung wartet das Plugin die Ruhepause ab (Einstellung, Standard 10 s).
+  2. `segment.ts` teilt die Striche in Zeilen und Segmente.
+  3. Nur Segmente ohne Cache-Eintrag gehen in den Worker. Dort werden sie gerastert (`preprocess.ts`) und mit onnxruntime-web erkannt (`ctc.ts`).
+  4. Der Text wird zusammengesetzt und, falls geändert, über den `BlockWriter` ins `text:`-Feld geschrieben.
+- **Cache:** `doc.ocr.lines` (Segment-Key → Text) wird mit der `.ink`-Datei gespeichert. Wechselt die Modellversion (`engine`), wird er verworfen.
+- **Schutz für eigenen Text:** `doc.ocr.written` ist der Hash des zuletzt von uns geschriebenen Textes. Weicht `text:` davon ab und ist nicht leer, bleibt der Text stehen. Nur der Befehl „Handschrift in dieser Notiz erkennen“ überschreibt ihn dann.
+- **Segmentierung:** Der Zeilenabstand richtet sich nach der typischen Strichhöhe. Eine neue Spalte bzw. ein neues Antwortfeld beginnt bei einer Lücke über 1,5 Zeilenhöhen. Zu breite Segmente (Seitenverhältnis > 16, das ist die Modellgrenze 1024 × 64) werden an der größten Lücke nahe der Mitte geteilt. Die Segmente einer Zeile werden mit Leerzeichen verbunden.
+- **Worker:** esbuild baut `src/ocr/worker.ts` separat und bindet ihn als String ein (`virtual:ocr-worker`, ca. 72 KB). Zur Laufzeit läuft er als Blob-Modul-Worker. `wasmBinary`, Modell und Config werden einmal pro Engine übergeben.
+- **Downloads:**
+  - Hugging-Face-URLs auf feste Commits gepinnt (v2 `6241c1ff…`, v1 `8b0350cc…`).
+  - Wasm von jsDelivr in exakt der gebündelten onnxruntime-web-Version.
+  - SHA-256 wird vor dem Schreiben geprüft, Ziel ist `<plugin>/models/`. Ein Download startet nur auf Knopfdruck (Einstellungen oder Befehl).
+
+**Gemessen** (E2E, synthetische Striche aus Einstrich-Fonts, Electron 43, single-threaded Wasm):
+
+| Eingabe (EMSReadability) | Erkannt |
+|---|---|
+| Hallo Welt | Hallo Welt |
+| Subnetzmaske 255.255.255.0 | Subnetzmaske 255.255.255.0 |
+| Übung für Größe (ß als „ss“ gezeichnet) | Übuns für Grösse |
+| 2001:db8::1 | 2007:db8:: I |
+
+- Dauer: ca. 1 s pro Zeile. Zwei Zeilen standen ca. 4 s nach dem letzten Strich im Block (1 s Ruhepause + Laden + Inferenz).
+- Schreibschrift-ähnliche Fonts (EMSAllure, HersheyScript) werden schlechter erkannt („Jtalla Welt“), Ziffernfolgen dagegen gut.
+- **Echte Handschrift muss noch auf dem HP-Gerät gemessen werden** (M7: CER auf 30 eigenen Zeilen).

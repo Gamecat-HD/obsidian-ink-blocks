@@ -2,6 +2,7 @@ import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, 
 import { PointerPipeline } from "../input/PointerPipeline";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
+import type { OcrTarget } from "../ocr/OcrService";
 import { opBounds, type InkOp } from "../model/ops";
 import { backgroundKind, measureBackground, PageBackground } from "../render/background";
 import { Surface } from "../render/Surface";
@@ -151,6 +152,30 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.plugin.store.touch(entry);
 		this.plugin.store.changed(entry, this.onStoreEvent);
 		this.toolbar?.update();
+		const target = this.ocrTarget();
+		if (target) this.plugin.ocr.schedule(target);
+	}
+
+	/** Ziel für die Texterkennung. Bleibt gültig, auch wenn dieser Block inzwischen neu gerendert wurde. */
+	ocrTarget(): OcrTarget | null {
+		const entry = this.entry;
+		const inkPath = this.path;
+		if (!entry || !inkPath) return null;
+		const { containerEl, ctx } = this;
+		return {
+			entry,
+			inkPath,
+			notePath: ctx.sourcePath,
+			hint: () => (containerEl.isConnected ? ctx.getSectionInfo(containerEl)?.lineStart : undefined),
+			busy: () => [...this.plugin.blocks].some((b) => b.entry === entry && b.pipeline?.active),
+			beforeWrite: () => {
+				for (const b of this.plugin.blocks) {
+					if (b.entry !== entry) continue;
+					if (b.containerEl.hasClass("is-active")) entry.reactivate = true;
+					b.releaseFocus();
+				}
+			},
+		};
 	}
 
 	private undo() {
@@ -180,7 +205,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 	 * Fokus/Auswahl aus dem Widget nehmen, bevor der Blockinhalt geschrieben wird – sonst übernimmt
 	 * CodeMirror beim Re-Render die DOM-Auswahl und Live Preview klappt den Block in den Quelltext auf.
 	 */
-	private releaseFocus() {
+	releaseFocus() {
 		const active = document.activeElement;
 		if (active instanceof HTMLElement && this.containerEl.contains(active)) active.blur();
 		const sel = window.getSelection();
@@ -239,6 +264,10 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.surface.el.tabIndex = -1;
 		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp, this.activate);
 		this.setupBackground(entry);
+		if (entry.reactivate) {
+			entry.reactivate = false;
+			this.activate();
+		}
 	}
 
 	/** `bg:`-Link auflösen (relativ zur Notiz); `null` + Fehlermeldung, wenn die Datei fehlt. */

@@ -1,11 +1,13 @@
 import { normalizePath, Notice, type Editor, type MarkdownFileInfo, type MarkdownView, type TFile } from "obsidian";
 import { formatBgLink } from "./block/bgLink";
+import { findInkFences } from "./block/locate";
 import { setField } from "./block/source";
 import type InkBlocksPlugin from "./main";
 import { PenDiagnosticsModal } from "./diagnostics";
 import { createNotebook, createPage } from "./model/ink-format";
 import { backgroundKind, measureBackground, openPdf } from "./render/background";
 import { WorksheetFileModal, WorksheetPageModal } from "./ui/WorksheetModal";
+import { ENGINES } from "./ocr/models";
 import { inkFileName, shortId } from "./util/ids";
 
 export function registerCommands(plugin: InkBlocksPlugin) {
@@ -22,6 +24,29 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 			const note = ctx.file;
 			if (!note) return;
 			new WorksheetFileModal(plugin.app, (file) => void pickPages(plugin, editor, note, file)).open();
+		},
+	});
+
+	plugin.addCommand({
+		id: "recognize-note",
+		name: "Handschrift in dieser Notiz erkennen",
+		editorCallback: (editor, ctx) => {
+			if (ctx.file) void recognizeNote(plugin, ctx.file.path, editor.getValue());
+		},
+	});
+
+	plugin.addCommand({
+		id: "download-models",
+		name: "Texterkennung: Modelle herunterladen",
+		callback: async () => {
+			const notice = new Notice("Lade Erkennungsmodell …", 0);
+			try {
+				await plugin.ocr.models.download(ENGINES["htr-v2"], (f, i, n) => notice.setMessage(`Lade ${i + 1}/${n}: ${f.path}`));
+				notice.setMessage("Texterkennung bereit.");
+			} catch (e) {
+				notice.setMessage(`Download fehlgeschlagen: ${(e as Error).message}`);
+			}
+			window.setTimeout(() => notice.hide(), 4000);
 		},
 	});
 
@@ -109,4 +134,27 @@ export async function insertWorksheet(
 			return;
 		}
 	}
+}
+
+/** Alle ink-Blöcke einer Notiz sofort erkennen (überschreibt auch bearbeiteten Text). */
+async function recognizeNote(plugin: InkBlocksPlugin, notePath: string, text: string) {
+	const fences = findInkFences(text).filter((f) => f.file);
+	let written = 0;
+	for (const fence of fences) {
+		const inkPath = normalizePath(fence.file!);
+		const listener = () => {};
+		const entry = await plugin.store.acquire(inkPath, listener).catch(() => null);
+		if (!entry) continue;
+		try {
+			const outcome = await plugin.ocr.run(
+				{ entry, inkPath, notePath, hint: () => fence.open, busy: () => false },
+				true,
+			);
+			if (outcome === "written") written++;
+			else if (outcome === "no-models") return;
+		} finally {
+			plugin.store.release(entry, listener);
+		}
+	}
+	new Notice(`Handschrift erkannt: ${fences.length} Block/Blöcke, ${written} aktualisiert.`);
 }

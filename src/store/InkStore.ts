@@ -18,6 +18,8 @@ export interface InkEntry {
 	dirty: boolean;
 	/** Liegt hier (nicht im Block), damit Undo ein Neu-Rendern in Live Preview übersteht. */
 	history: History;
+	/** Block war aktiv, als der Blockinhalt (z. B. `text:`) geschrieben wurde → nach dem Re-Render wieder aktivieren. */
+	reactivate?: boolean;
 }
 
 interface Entry extends InkEntry {

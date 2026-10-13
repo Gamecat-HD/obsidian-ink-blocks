@@ -192,3 +192,6 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **Leeres Heft + `bg:`:** Ein leerer Heft-Block, dem man von Hand ein `bg:` gibt, wird automatisch zum Arbeitsblatt (Größe des Hintergrunds).
 - **Rand:** Koordinaten beziehen sich auf die Innenkante der Fläche (`clientLeft/clientTop`). Vorher lag alles um den 1-px-Rahmen versetzt.
 - **E2E-Harness:** Der Button „Vertrauen“ im Trust-Dialog von Obsidian 1.14 hinterlässt einen Zustand, in dem keine Modals mehr öffnen. Der Harness schließt den Dialog deshalb per X; die Plugins sind über `setEnable` bereits aktiv.
+- **OCR (M5):** Die Lücke für neue Segmente bezieht sich auf die Zeilenhöhe, nicht auf die Strichhöhe. Druckbuchstaben bestehen aus kurzen Strichen, und Wortabstände sollen im Segment bleiben.
+- **Re-Aktivierung:** War der Block beim Schreiben von `text:` aktiv, aktiviert sich die neu gerenderte Instanz wieder (`entry.reactivate`), damit Strg+Z weiter auf die Tinte wirkt.
+- **Testdaten:** Die E2E-Tests erzeugen „Handschrift“ als echte Pointer-Striche aus Einstrich-Fonts (`hersheytext`, `scripts/e2e/lib/hershey.mjs`). Umlaute setzen sie aus Grundbuchstabe + zwei Punkt-Strichen zusammen.

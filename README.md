@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **M4 fertig** (Phase 2 komplett): Schreibflächen mit Werkzeugleiste, Undo/Redo und Mitwachsen (Phase 1) sowie **Arbeitsblätter**: PDF-Seiten oder Bilder als Hintergrund, Befehl „Arbeitsblatt einfügen“ (einzelne oder alle Seiten). Als Nächstes: lokale Texterkennung (M5). Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
+> Status: **M5 fertig**: Schreibflächen (Werkzeugleiste, Undo/Redo, Mitwachsen), **Arbeitsblätter** (PDF-Seiten/Bilder als Hintergrund) und **lokale Texterkennung**. Die Handschrift landet als Text im `text:`-Feld des Blocks und ist damit in Obsidian und der Lernplattform durchsuchbar. Als Nächstes: Fallback-Engines (M6). Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
 
 ## Dokumentation
 
@@ -31,5 +31,5 @@ Zum Testen `main.js`, `manifest.json` und `styles.css` nach `<vault>/.obsidian/p
 
 ## Netzwerk und Datenschutz
 
-- Das Plugin sendet **keine** Notiz- oder Handschriftdaten irgendwohin.
-- Geplant (Phase 3): Beim ersten Aktivieren der Texterkennung werden einmalig das OCR-Modell (Hugging Face, ca. 10 MB) und die onnxruntime-WASM (jsDelivr) in den Plugin-Ordner geladen. Danach läuft alles offline.
+- Das Plugin sendet **keine** Notiz- oder Handschriftdaten irgendwohin. Die Texterkennung läuft lokal (onnxruntime-web/Wasm in einem Worker).
+- **Einmaliger Download, nur auf Knopfdruck** (Einstellungen → Ink Blocks → „Herunterladen“ oder Befehl „Texterkennung: Modelle herunterladen“): Erkennungsmodell `naeyn/de-htr-web-v2` von Hugging Face (ca. 10 MB, Apache-2.0, fester Commit) und `ort-wasm-simd-threaded.wasm` von jsDelivr (ca. 14 MB, onnxruntime-web 1.30.0). Beides wird per SHA-256 geprüft und in `<plugin>/models/` abgelegt. Danach läuft alles offline.

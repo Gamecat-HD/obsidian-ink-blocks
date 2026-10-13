@@ -1,19 +1,26 @@
 import { debounce, loadPdfJs, Plugin } from "obsidian";
 import { InkBlockChild } from "./block/InkBlockChild";
 import { registerCommands } from "./commands";
+import { OcrService } from "./ocr/OcrService";
 import { DEFAULT_SETTINGS, InkSettingTab, type InkSettings } from "./settings";
 import { InkStore } from "./store/InkStore";
 
 export default class InkBlocksPlugin extends Plugin {
 	declare settings: InkSettings;
 	store!: InkStore;
+	ocr!: OcrService;
 	readonly blocks = new Set<InkBlockChild>();
 	/** Zugriff für die E2E-Tests (scripts/e2e). */
-	readonly dev = { loadPdfJs, loaded: 0, unloaded: 0 };
+	readonly dev: { loadPdfJs: typeof loadPdfJs; loaded: number; unloaded: number; rewriteUrl?: (url: string) => string } = {
+		loadPdfJs,
+		loaded: 0,
+		unloaded: 0,
+	};
 
 	async onload() {
 		await this.loadSettings();
 		this.store = new InkStore(this);
+		this.ocr = new OcrService(this);
 
 		this.registerMarkdownCodeBlockProcessor("ink", (source, el, ctx) => {
 			ctx.addChild(new InkBlockChild(el, source, ctx, this));
@@ -29,6 +36,7 @@ export default class InkBlocksPlugin extends Plugin {
 
 	onunload() {
 		this.saveSoon.run();
+		this.ocr.dispose();
 		this.store.dispose();
 	}
 

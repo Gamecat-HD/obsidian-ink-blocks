@@ -1,5 +1,6 @@
-import { normalizePath, PluginSettingTab, Setting } from "obsidian";
+import { normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InkBlocksPlugin from "./main";
+import { ENGINES, engineFiles } from "./ocr/models";
 
 export type BgStyle = "ruled" | "grid" | "blank";
 export type ToolId = "pen" | "hl" | "eraser";
@@ -27,6 +28,10 @@ export interface InkSettings {
 	/** Seitentaste des Stifts radiert (zusätzlich zum Radierer-Ende). */
 	barrelErases: boolean;
 	tools: ToolState;
+	/** Handschrift lokal erkennen und ins `text:`-Feld schreiben. */
+	ocrEnabled: boolean;
+	/** Ruhepause nach dem letzten Strich, bevor erkannt wird (Sekunden). */
+	ocrDelay: number;
 }
 
 export const DEFAULT_SETTINGS: InkSettings = {
@@ -36,6 +41,8 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	mouseDraws: true,
 	barrelErases: true,
 	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0 },
+	ocrEnabled: true,
+	ocrDelay: 10,
 };
 
 export class InkSettingTab extends PluginSettingTab {
@@ -78,9 +85,63 @@ export class InkSettingTab extends PluginSettingTab {
 		this.toggle("Nur Stift zeichnet", "Finger scrollen die Notiz statt zu zeichnen (Handballen werden ignoriert).", "penOnly");
 		this.toggle("Maus zeichnet", "Mit gedrückter linker Maustaste schreiben.", "mouseDraws");
 		this.toggle("Seitentaste radiert", "Die Taste am Stift wirkt als Radierer.", "barrelErases");
+
+		new Setting(containerEl).setName("Texterkennung").setHeading();
+		this.toggle(
+			"Handschrift erkennen",
+			"Erkennt die Handschrift lokal auf diesem Gerät und schreibt sie ins text:-Feld des Blocks – durchsuchbar in Obsidian und anderen Tools, die den Vault lesen.",
+			"ocrEnabled",
+		);
+		new Setting(containerEl)
+			.setName("Wartezeit nach dem Schreiben")
+			.setDesc("Sekunden Ruhe nach dem letzten Strich, bevor erkannt wird.")
+			.addSlider((sl) =>
+				sl
+					.setLimits(2, 60, 1)
+					.setValue(this.plugin.settings.ocrDelay)
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						this.plugin.settings.ocrDelay = v;
+						await this.plugin.saveSettings();
+					}),
+			);
+		this.modelSetting(containerEl);
 	}
 
-	private toggle(name: string, desc: string, key: "penOnly" | "mouseDraws" | "barrelErases") {
+	private modelSetting(containerEl: HTMLElement) {
+		const spec = ENGINES["htr-v2"];
+		const mb = (engineFiles(spec).reduce((n, f) => n + f.size, 0) / 1e6).toFixed(0);
+		const setting = new Setting(containerEl)
+			.setName(`Erkennungsmodell (${spec.label})`)
+			.setDesc("Wird geprüft …");
+		const desc = (text: string) => setting.setDesc(text);
+		void this.plugin.ocr.models.isReady(spec).then((ready) => {
+			if (ready) {
+				desc("Bereit – läuft komplett offline.");
+				return;
+			}
+			desc(
+				`Einmaliger Download (~${mb} MB) von Hugging Face und jsDelivr in den Plugin-Ordner, danach offline. Es werden keine Notizen oder Handschriften übertragen.`,
+			);
+			setting.addButton((b) =>
+				b
+					.setButtonText("Herunterladen")
+					.setCta()
+					.onClick(async () => {
+						b.setDisabled(true);
+						try {
+							await this.plugin.ocr.models.download(spec, (f, i, n) => b.setButtonText(`${i + 1}/${n}: ${f.path.split("/").pop()}`));
+							new Notice("Texterkennung bereit.");
+						} catch (e) {
+							new Notice(`Download fehlgeschlagen: ${(e as Error).message}`, 10000);
+						}
+						this.display();
+					}),
+			);
+		});
+	}
+
+	private toggle(name: string, desc: string, key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled") {
 		new Setting(this.containerEl)
 			.setName(name)
 			.setDesc(desc)
