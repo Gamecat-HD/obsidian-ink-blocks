@@ -19,6 +19,8 @@ export interface Stroke {
 	points: number[];
 	/** Kein echter Druck (Maus/Finger) – perfect-freehand simuliert ihn aus der Geschwindigkeit. */
 	simulated?: boolean;
+	/** Erkannte Form (Linie, Rechteck, …): scharfe Ecken, gleichmäßige Breite, nicht in die Texterkennung. */
+	shape?: boolean;
 }
 
 export interface InkBackground {
@@ -105,6 +107,7 @@ interface StoredStroke {
 	s: number;
 	p: number[];
 	sp?: 1;
+	sh?: 1;
 }
 
 export function encodeInk(doc: InkData): string {
@@ -114,6 +117,7 @@ export function encodeInk(doc: InkData): string {
 	const strokes = doc.strokes.map((s) => {
 		const stored: StoredStroke = { id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) };
 		if (s.simulated) stored.sp = 1;
+		if (s.shape) stored.sh = 1;
 		return JSON.stringify(stored);
 	});
 	const headJson = JSON.stringify(head).slice(0, -1);
@@ -145,6 +149,7 @@ export function decodeInk(text: string): InkData {
 		}
 		const stroke: Stroke = { id: s.id, tool: s.t, color: s.c, size: s.s, points: decodePoints(s.p, q) };
 		if (s.sp) stroke.simulated = true;
+		if (s.sh) stroke.shape = true;
 		return stroke;
 	});
 

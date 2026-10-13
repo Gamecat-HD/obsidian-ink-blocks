@@ -75,7 +75,7 @@ interface Line {
 /** Striche → Zeilen (oben nach unten) → Segmente (links nach rechts). Nur Stift, kein Textmarker. */
 export function segmentLines(all: Stroke[], options: Partial<SegmentOptions> = {}): Segment[][] {
 	const opts = { ...DEFAULTS, ...options };
-	const strokes = all.filter((s) => s.tool === "pen" && s.points.length);
+	const strokes = all.filter((s) => s.tool === "pen" && !s.shape && s.points.length);
 	if (!strokes.length) return [];
 	const H = referenceHeight(strokes);
 	const boxes = new Map(strokes.map((s) => [s, boxOf([s])]));

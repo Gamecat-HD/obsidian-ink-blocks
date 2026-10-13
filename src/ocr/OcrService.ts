@@ -135,7 +135,7 @@ export class OcrService {
 		const { entry } = target;
 		const doc = entry.doc;
 		const lines = segmentLines(doc.strokes);
-		const refHeight = referenceHeight(doc.strokes.filter((s) => s.tool === "pen"));
+		const refHeight = referenceHeight(doc.strokes.filter((s) => s.tool === "pen" && !s.shape));
 
 		// Engine wählen und erkennen; scheitert sie, die nächste versuchen (eigener Cache je Engine-Version).
 		let engine: Engine | null;

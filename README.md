@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **v0.1.0 – Phase 1–3 umgesetzt (M1–M7)**: Schreibflächen, Arbeitsblätter, lokale Texterkennung mit Ausweich-Engines. Getestet in einer echten Obsidian-Instanz (E2E) mit Maus und simuliertem Stift. **Auf echter Stift-Hardware noch nicht erprobt** → [docs/HARDWARE.md](docs/HARDWARE.md).
+> Status: **v0.2.0**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich direkt auf den Kacheln, iPad-Modus, Linienabstand und Breiten je Fläche, Textmarker mit Lineal, Formerkennung (M9–M13). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus und simuliertem Stift; auf echter Stift-Hardware in Erprobung → [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ## Bedienung
 
@@ -27,6 +27,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - **Eingebettete Bilder/PDFs:** Beim Überfahren erscheint „Beschriften“. Ein Klick macht daraus Arbeitsblatt-Flächen mit dem Bild bzw. der PDF-Seite als Hintergrund (bei PDFs Seite oder alle Seiten wählbar).
 - Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, Farben, 3 Breiten (fein/mittel/breit), Rückgängig/Wiederholen und das **Hintergrund-Menü**: liniert, kariert oder leer, dazu Linienabstand bzw. Kästchengröße nur für diese Fläche (Eng/Mittel/Weit bzw. Klein/Mittel/Groß, „Standard“ = aus den Einstellungen).
 - **Textmarker:** 6 Farben, 3 Breiten, liegt immer unter der Schrift (auch beim Zeichnen). Mit dem **Lineal** (Knopf in der Leiste, nur beim Textmarker; Standard: an) zieht er gerade Linien vom Ansatzpunkt zum Stift, nahe der Waagerechten exakt waagerecht. Auf Arbeitsblättern wirkt er wie ein echter Marker: Gedruckter Text darunter bleibt dunkel.
+- **Formen:** Linie, Rechteck, Dreieck oder Kreis/Ellipse zeichnen und den Stift am Ende kurz (½ s) ruhig halten. Daraus wird eine saubere Form (gerade Linien rasten waagerecht/senkrecht ein). Ohne Halten bleibt alles Freihand; abschaltbar in den Einstellungen. Formen landen nicht im erkannten Text.
 - **Einstellungen:** Standard-Linienabstand und Kästchengröße sowie die drei Strichbreiten von Stift und Textmarker sind frei einstellbar. Breiten gelten für neue Striche.
 - **Strg+Z / Strg+Umschalt+Z / Strg+Y** wirken auf die Tinte, solange der Block aktiv ist, also nach dem Antippen. Ein Klick in den Text gibt die Tasten wieder an den Editor.
 - Der **erkannte Text** steht dezent unter der Fläche (Klick klappt ihn auf) und im Feld `text:` des Blocks. Darüber finden ihn die Obsidian-Suche, Omnisearch und die Lernplattform.

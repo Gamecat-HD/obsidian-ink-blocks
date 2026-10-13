@@ -209,3 +209,32 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **`InkEditor`:** Leiste, Fläche, Eingabe und Hintergrund sind zusammengefasst und werden vom Block und von der ausgeklappten Ansicht genutzt. Jede Ansicht hat ihr eigenes `commit`, das nur die *anderen* Ansichten benachrichtigt (sonst baut sich die gerade benutzte Ansicht nach jedem Strich neu auf). `plugin.editors` ersetzt die Block-Liste für die „wird gerade gezeichnet?“-Prüfung der Texterkennung.
 - **Ausklappen:** Ein Obsidian-Modal (96 vw × 94 vh) mit eigener Store-Referenz (der Block kann währenddessen neu gerendert werden) und eigenem Tastatur-Scope für Strg+Z/Y. Die Texterkennung zielt weiter auf den Block in der Notiz.
 - **Einbettungen beschriften:** Der Button wird erst beim Überfahren angehängt (Embeds rendern asynchron bzw. als CM-Widgets). Die Zeile kommt in Live Preview über `cm.posAtDOM`, sonst über die erste Zeile mit dieser Einbettung. Die Einbettung wird durch Arbeitsblatt-Blöcke ersetzt (Text davor/danach bleibt als eigene Absätze). Hinweis: Links in Codeblöcken zählt Obsidian nicht als Backlink.
+
+### Erweiterung v0.2.0 (M9–M13)
+
+- **M9 Live-Strich (zweiter Anlauf):** Auch ohne `desynchronized` zeigte der Block auf dem HP-Laptop (Wayland, Stift) den Strich erst nach dem Absetzen, im Pen-Diagnose-Dialog dagegen sofort.
+  - Unterschiede: Der Dialog malt synchron im `pointermove` auf einen stabilen, immer sichtbaren Canvas. Der Block malte per `requestAnimationFrame` auf einen eigenen Live-Canvas, der pro Strich von `display:none` auf sichtbar wechselte und neu dimensioniert wurde.
+  - Jetzt malt der Block wie der Dialog: synchron, direkt auf die Kacheln, nur im betroffenen Ausschnitt (Clip, gecachter 2D-Kontext, kein Realloc). Die Reihenfolge Textmarker → Live-Textmarker → Stift → Live-Stift hält Markierungen auch live unter der Schrift.
+  - `pointsBounds` rechnet mit 0,8 × size (perfect-freehand-Radius bei vollem Druck mit thinning 0.6).
+- **M10 iPad-Modus:** Obsidian 1.14 hat `app.emulateMobile(on)`. Das setzt `localStorage.EmulateMobile` und lädt neu; danach gilt `Platform.isMobile` plus `body.emulate-mobile`/`is-mobile`.
+  - `isDesktopApp` bleibt true, Desktop-Plugins laden weiter.
+  - Vor dem Umschalten werden Notizen, Ink-Dateien, Einstellungen und Layout gesichert.
+  - Im Touch-Modus ist die Leiste immer sichtbar (kein Hover) und hat 40-px-Knöpfe.
+  - Zum Zurückschalten gibt es einen schwebenden Knopf.
+  - E2E m10 lädt zweimal neu.
+- **M11 Muster und Breiten:** `model/pattern.ts` (rein, getestet) löst Stil und Abstand je Block auf. Das neue Block-Feld `gap:` überschreibt die Einstellungen; ein Stilwechsel entfernt es wieder.
+  - `writeBlockFields` schreibt mehrere Felder in einem Schritt.
+  - Breiten: 3 Slots je Werkzeug, Werte in den Einstellungen.
+  - `settingsData.ts` (ohne obsidian-Import, testbar) migriert Daten aus v0.1.
+  - Obsidian 1.14 kennt `grid-3x3` nicht mehr → Icon `grid`.
+- **M12 Textmarker:**
+  - Das Lineal ersetzt die Punkte live durch `straightLine` (bis ±8° waagerecht).
+  - Die Palette ist hinten erweitert (6–8), damit gespeicherte Indizes stabil bleiben.
+  - Auf Arbeitsblättern multiplizieren die Kacheln mit der Seite (`mix-blend-mode: multiply`).
+- **M13 Formerkennung (`model/shapes.ts`):** Liegt der Stift 500 ms ruhig (Zittern < 4 CSS-px), wird der Strich geprüft. Ab 30 Doc-Einheiten gibt es:
+  - Linie: Abweichung von der Sehne ≤ 8 %, Einrasten bei ±6°.
+  - Geschlossene Formen: Ende nahe am Start, Umfang ≥ 1,8 × Diagonale.
+    - Ellipse/Kreis: Variationskoeffizient der normierten Radien < 0,07.
+    - Dreieck oder Rechteck: Ecken per RDP, fast gerade Ecken fallen weg (auch ein Startpunkt mitten auf einer Kante), Rechteck mit 60–120°-Winkeln, achsparallel bei < 10°.
+    - Sonst lockerer Ellipsen-Fallback.
+  - Ergebnis: dichte Polylinie mit konstantem Druck, Flag `shape` (`sh:1`). Gerendert ohne Glättung (scharfe Ecken). Formen gehen nicht in die Texterkennung.

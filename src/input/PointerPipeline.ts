@@ -1,7 +1,7 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
-import { straightLine } from "../model/shapes";
+import { recognizeShape, straightLine } from "../model/shapes";
 import { outlinePath } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
@@ -19,6 +19,10 @@ const PALM_GRACE_MS = 500;
 /** Heft-Modus: kommt der Stift näher als GROW_MARGIN an den unteren Rand, wächst die Fläche um GROW_STEP. */
 const GROW_MARGIN = 120;
 const GROW_STEP = 300;
+/** Formerkennung: so lange (ms) muss der Stift ruhig liegen, bevor der Strich zur Form wird. */
+const HOLD_MS = 500;
+/** Kleinere Bewegungen (CSS-px) zählen beim Halten nicht – Zittern der Hand. */
+const HOLD_SLOP_PX = 4;
 
 type Gesture =
 	| {
@@ -32,6 +36,11 @@ type Gesture =
 			straight: boolean;
 			x0: number;
 			y0: number;
+			/** Zur Form geworden (Halten): weitere Bewegung wird ignoriert. */
+			shape: boolean;
+			/** Wo der Stift zuletzt merklich stand (Formerkennung). */
+			holdX: number;
+			holdY: number;
 			points: number[];
 			hStart: number;
 	  }
@@ -51,6 +60,7 @@ export class PointerPipeline {
 	private gesture: Gesture | null = null;
 	private penDown = false;
 	private penUntil = 0;
+	private holdTimer = 0;
 
 	constructor(
 		private readonly plugin: InkBlocksPlugin,
@@ -76,6 +86,7 @@ export class PointerPipeline {
 	}
 
 	destroy() {
+		window.clearTimeout(this.holdTimer);
 		this.gesture = null;
 		this.setDrawing(false);
 	}
@@ -130,9 +141,13 @@ export class PointerPipeline {
 			straight: hl && settings.hlStraight,
 			x0: x,
 			y0: y,
+			shape: false,
+			holdX: x,
+			holdY: y,
 			points: [x, y, simulated ? 0.5 : e.pressure],
 			hStart: this.entry.doc.h,
 		};
+		this.armHold(x, y);
 		this.renderLive();
 	};
 
@@ -147,6 +162,7 @@ export class PointerPipeline {
 			return;
 		}
 
+		if (g.kind === "draw" && g.shape) return;
 		if (g.kind === "draw" && g.straight) {
 			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
 			g.points = straightLine(g.x0, g.y0, x, y);
@@ -169,8 +185,12 @@ export class PointerPipeline {
 				this.maybeGrow(y);
 			}
 		}
+		if (g.kind !== "draw") return;
+		const n = g.points.length;
+		const moved = Math.hypot(g.points[n - 3] - g.holdX, g.points[n - 2] - g.holdY) * this.surface.docScale;
+		if (moved > HOLD_SLOP_PX) this.armHold(g.points[n - 3], g.points[n - 2]);
 		// Synchron malen (wie der Pen-Diagnose-Dialog): Chromium liefert pointermove ohnehin im Frame-Takt.
-		if (g.kind === "draw") this.renderLive();
+		this.renderLive();
 	};
 
 	private readonly onUp = (e: PointerEvent) => {
@@ -181,10 +201,12 @@ export class PointerPipeline {
 		}
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
+		window.clearTimeout(this.holdTimer);
 		this.setDrawing(false);
 
 		if (g.kind === "draw") {
 			const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
+			if (g.shape) stroke.shape = true;
 			// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
 			if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
 			const op: InkOp = { kind: "add", stroke, hBefore: g.hStart, hAfter: this.entry.doc.h };
@@ -201,6 +223,7 @@ export class PointerPipeline {
 		const g = this.gesture;
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
+		window.clearTimeout(this.holdTimer);
 		this.setDrawing(false);
 		if (g.kind === "draw") {
 			this.surface.clearLive();
@@ -239,6 +262,27 @@ export class PointerPipeline {
 	private scroller(): HTMLElement | null {
 		return this.surface.el.closest<HTMLElement>(".ink-expanded-scroll, .cm-scroller, .markdown-preview-view");
 	}
+
+	/** Haltezeit neu starten: steht der Stift HOLD_MS lang still, wird der Strich zur Form. */
+	private armHold(x: number, y: number) {
+		const g = this.gesture;
+		if (g?.kind !== "draw") return;
+		g.holdX = x;
+		g.holdY = y;
+		window.clearTimeout(this.holdTimer);
+		if (!this.plugin.settings.shapeRecognition || g.straight) return;
+		this.holdTimer = window.setTimeout(this.onHold, HOLD_MS);
+	}
+
+	private readonly onHold = () => {
+		const g = this.gesture;
+		if (g?.kind !== "draw" || g.shape) return;
+		const shape = recognizeShape(g.points);
+		if (!shape) return;
+		g.points = shape.points;
+		g.shape = true;
+		this.renderLive();
+	};
 
 	private renderLive() {
 		const g = this.gesture;

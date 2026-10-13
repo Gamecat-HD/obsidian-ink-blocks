@@ -54,6 +54,7 @@ export class InkSettingTab extends PluginSettingTab {
 		this.toggle("Textmarker zieht gerade Linien", "Wie mit dem Lineal: vom Ansatzpunkt gerade zum Stift, nahe der Waagerechten exakt waagerecht. Auch über den Lineal-Knopf in der Leiste umschaltbar.", "hlStraight", () => this.plugin.toolsChanged());
 
 		new Setting(containerEl).setName("Eingabe").setHeading();
+		this.toggle("Formen erkennen", "Linie, Rechteck, Dreieck oder Kreis zeichnen und am Ende den Stift kurz ruhig halten – daraus wird eine saubere Form.", "shapeRecognition");
 		this.toggle("Nur Stift zeichnet", "Finger scrollen die Notiz statt zu zeichnen (Handballen werden ignoriert).", "penOnly");
 		this.toggle("Maus zeichnet", "Mit gedrückter linker Maustaste schreiben.", "mouseDraws");
 		this.toggle("Seitentaste radiert", "Die Taste am Stift wirkt als Radierer.", "barrelErases");
@@ -165,7 +166,7 @@ export class InkSettingTab extends PluginSettingTab {
 	private toggle(
 		name: string,
 		desc: string,
-		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText" | "hlStraight",
+		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText" | "hlStraight" | "shapeRecognition",
 		after?: () => void,
 	) {
 		new Setting(this.containerEl)

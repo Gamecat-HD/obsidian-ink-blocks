@@ -15,9 +15,14 @@ interface StrokeStyle {
 	tool: Tool;
 	size: number;
 	simulated?: boolean;
+	shape?: boolean;
 }
 
 export function strokeOptions(style: StrokeStyle, last: boolean): StrokeOptions {
+	if (style.shape) {
+		// Saubere Form: keine Glättung (Ecken bleiben scharf), gleichmäßige Breite.
+		return { size: style.size, thinning: 0, smoothing: 0, streamline: 0, simulatePressure: false, last };
+	}
 	if (style.tool === "hl") {
 		return { size: style.size, thinning: 0, smoothing: 0.5, streamline: 0.5, simulatePressure: false, last };
 	}

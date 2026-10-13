@@ -7,6 +7,7 @@ function sample(): InkData {
 	doc.strokes.push(
 		{ id: "s1", tool: "pen", color: 0, size: 3, points: [10.04, 20.51, 0.5, 12.333, 21.987, 0.73, 15, 25, 1] },
 		{ id: "s2", tool: "hl", color: 2, size: 12, points: [100, 100, 0.2], simulated: true },
+		{ id: "s3", tool: "pen", color: 1, size: 3, points: [0, 0, 0.5, 50, 0, 0.5], simulated: true, shape: true },
 	);
 	doc.ocr = { engine: "htr-v2@abcd", lines: { deadbeef: "Hallo" }, written: "1234abcd" };
 	return doc;
@@ -38,12 +39,14 @@ describe("encodeInk/decodeInk", () => {
 		expect(back.strokes.map((s) => [s.id, s.tool, s.color, s.size, s.points.length])).toEqual([
 			["s1", "pen", 0, 3, 9],
 			["s2", "hl", 2, 12, 3],
+			["s3", "pen", 1, 3, 6],
 		]);
-		expect(back.strokes.map((s) => s.simulated)).toEqual([undefined, true]);
+		expect(back.strokes.map((s) => s.simulated)).toEqual([undefined, true, true]);
+		expect(back.strokes.map((s) => s.shape)).toEqual([undefined, undefined, true]);
 	});
 	it("schreibt einen Strich pro Zeile", () => {
 		const lines = encodeInk(sample()).trimEnd().split("\n");
-		expect(lines).toHaveLength(4);
+		expect(lines).toHaveLength(5);
 		expect(lines[1]).toMatch(/^\{"id":"s1"/);
 	});
 	it("leeres Dokument ist gültiges JSON", () => {
