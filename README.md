@@ -17,6 +17,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 | **OCR-Debug: Segmentbilder dieser Notiz speichern** | Zeigt, wie das Modell die Handschrift „sieht“ (Bilder + erkannter Text) |
 | **Verwaiste Ink-Dateien finden** | `.ink`-Dateien ohne Block auflisten und auf Wunsch in den Papierkorb legen |
 | **Pen diagnostics** | Stift testen: Druck, Neigung, Radierer, Event-Rate |
+| **iPad-Modus umschalten** | Obsidian auf die Touch-Oberfläche umschalten und zurück (siehe unten) |
 
 **In der Fläche:**
 - Mit Stift oder Maus schreiben.
@@ -27,6 +28,14 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, 3 Farben, 2 Breiten, Rückgängig/Wiederholen und den Hintergrund (liniert, kariert, leer).
 - **Strg+Z / Strg+Umschalt+Z / Strg+Y** wirken auf die Tinte, solange der Block aktiv ist, also nach dem Antippen. Ein Klick in den Text gibt die Tasten wieder an den Editor.
 - Der **erkannte Text** steht dezent unter der Fläche (Klick klappt ihn auf) und im Feld `text:` des Blocks. Darüber finden ihn die Obsidian-Suche, Omnisearch und die Lernplattform.
+
+**iPad-Modus** (nur Desktop-App, z. B. auf einem Convertible):
+- Knopf in der linken Leiste (Tablet-Symbol) oder Befehl „iPad-Modus umschalten“. Obsidian lädt neu und zeigt seine Tablet-Oberfläche: große Bedienelemente, Wischen für die Seitenleisten, alles per Finger bedienbar.
+- Die Ink-Leiste ist dort immer sichtbar und größer, „Beschriften“ an Bildern/PDFs ebenso.
+- Zurück: schwebender Knopf unten rechts (Monitor-Symbol) oder derselbe Befehl. Die Desktop-Anordnung bleibt erhalten.
+- Gilt nur für dieses Gerät (wird nicht synchronisiert). Notfalls in den Entwicklertools (Strg+Umschalt+I): `app.emulateMobile(false)`.
+- Tipp: Unter Einstellungen → Mobil → Werkzeugleiste „Schreibfläche einfügen“ aufnehmen.
+- Technik: nutzt Obsidians eingebaute, nicht offiziell dokumentierte Mobil-Emulation (`app.emulateMobile`).
 
 **Block-Syntax:**
 

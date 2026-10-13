@@ -346,3 +346,56 @@
 	width: 14px;
 	height: 14px;
 }
+
+/* ---- iPad-Modus (Obsidians Mobil-Oberfläche): kein Hover, größere Ziele ---- */
+
+.ink-tablet-toggle {
+	position: fixed;
+	right: var(--size-4-3);
+	bottom: calc(var(--mobile-navbar-height, 0px) + var(--safe-area-inset-bottom, 0px) + var(--size-4-3));
+	z-index: var(--layer-status-bar, 15);
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	box-shadow: var(--shadow-s);
+	opacity: 0.6;
+}
+
+.ink-tablet-toggle:hover,
+.ink-tablet-toggle:active {
+	opacity: 1;
+}
+
+.is-mobile .ink-block:has(> .ink-toolbar-anchor) {
+	padding-top: 52px;
+}
+
+.is-mobile .ink-toolbar-anchor {
+	top: 52px;
+}
+
+.is-mobile .ink-toolbar {
+	top: -50px;
+	opacity: 1;
+	visibility: visible;
+	transition: none;
+}
+
+.is-mobile .ink-toolbar button {
+	width: 40px;
+	height: 40px;
+}
+
+.is-mobile .ink-block.is-drawing .ink-toolbar {
+	opacity: 0.12;
+}
+
+.is-mobile .ink-embed-annotate {
+	opacity: 1;
+}

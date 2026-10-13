@@ -4,6 +4,7 @@ import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
 import { OcrService } from "./ocr/OcrService";
 import { EmbedAnnotator } from "./ui/EmbedAnnotator";
+import { registerTabletMode } from "./ui/TabletMode";
 import { DEFAULT_SETTINGS, InkSettingTab, type InkSettings } from "./settings";
 import { InkStore } from "./store/InkStore";
 
@@ -31,6 +32,7 @@ export default class InkBlocksPlugin extends Plugin {
 		});
 		registerCommands(this);
 		new EmbedAnnotator(this);
+		registerTabletMode(this);
 		this.registerEvent(this.app.workspace.on("css-change", () => this.refreshBlocks()));
 		// Klick außerhalb des aktiven Blocks deaktiviert ihn (Strg+Z gehört dann wieder dem Editor).
 		this.registerDomEvent(document, "pointerdown", (e) => {
