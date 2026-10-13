@@ -5,3 +5,4 @@ data.json
 .DS_Store
 # lokal heruntergeladene OCR-Modelle / WASM
 models/
+e2e-out/

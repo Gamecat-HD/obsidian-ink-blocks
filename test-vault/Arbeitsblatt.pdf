@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 628 >>
+stream
+BT /F1 20 Tf 56 780 Td (Arbeitsblatt IPv6) Tj ET
+BT /F1 12 Tf 56 730 Td (1. Kuerze die Adresse 2001:0db8:0000:0000:0000:0000:0000:0001) Tj ET
+0.6 G 0.5 w 56 702 m 540 702 l S
+0.6 G 0.5 w 56 674 m 540 674 l S
+BT /F1 12 Tf 56 620 Td (2. Wie viele /64-Netze passen in ein /48?) Tj ET
+0.6 G 0.5 w 56 592 m 540 592 l S
+0.6 G 0.5 w 56 564 m 540 564 l S
+BT /F1 12 Tf 56 510 Td (3. Nenne den Praefix fuer Link-Local-Adressen.) Tj ET
+0.6 G 0.5 w 56 482 m 540 482 l S
+0.6 G 0.5 w 56 454 m 540 454 l S
+BT /F1 12 Tf 56 400 Td (4. Was ist die Loopback-Adresse in IPv6?) Tj ET
+0.6 G 0.5 w 56 372 m 540 372 l S
+0.6 G 0.5 w 56 344 m 540 344 l S
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 334 >>
+stream
+BT /F1 20 Tf 56 780 Td (Arbeitsblatt Subnetting) Tj ET
+BT /F1 12 Tf 56 730 Td (1. Subnetzmaske fuer /26 in Dezimalschreibweise?) Tj ET
+0.6 G 0.5 w 56 702 m 540 702 l S
+0.6 G 0.5 w 56 674 m 540 674 l S
+BT /F1 12 Tf 56 620 Td (2. Wie viele Hosts hat ein /27-Netz?) Tj ET
+0.6 G 0.5 w 56 592 m 540 592 l S
+0.6 G 0.5 w 56 564 m 540 564 l S
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 6 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000191 00000 n 
+0000000870 00000 n 
+0000001002 00000 n 
+0000001387 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1519
+%%EOF
