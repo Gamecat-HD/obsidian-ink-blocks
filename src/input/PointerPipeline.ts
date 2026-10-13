@@ -15,9 +15,21 @@ const MIN_STEP = 0.3;
 const ERASER_RADIUS = 8;
 /** So lange nach dem Absetzen des Stifts werden Berührungen noch als Handballen ignoriert. */
 const PALM_GRACE_MS = 500;
+/** Heft-Modus: kommt der Stift näher als GROW_MARGIN an den unteren Rand, wächst die Fläche um GROW_STEP. */
+const GROW_MARGIN = 120;
+const GROW_STEP = 300;
 
 type Gesture =
-	| { kind: "draw"; pointerId: number; tool: Tool; color: number; size: number; simulated: boolean; points: number[] }
+	| {
+			kind: "draw";
+			pointerId: number;
+			tool: Tool;
+			color: number;
+			size: number;
+			simulated: boolean;
+			points: number[];
+			hStart: number;
+	  }
 	| {
 			kind: "erase";
 			pointerId: number;
@@ -42,6 +54,8 @@ export class PointerPipeline {
 		private readonly surface: Surface,
 		/** Wird nach jeder abgeschlossenen Änderung aufgerufen. */
 		private readonly onOp: (op: InkOp) => void,
+		/** Wird bei jedem Stift-/Mauskontakt aufgerufen (Block aktivieren, Fokus für Ctrl+Z). */
+		private readonly onActivate: () => void,
 	) {
 		const el = surface.el;
 		el.addEventListener("pointerdown", this.onDown);
@@ -86,6 +100,7 @@ export class PointerPipeline {
 		}
 
 		this.capture(e);
+		this.onActivate();
 		const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
 		const tools = settings.tools;
 		const erase =
@@ -109,6 +124,7 @@ export class PointerPipeline {
 			size: hl ? HL_SIZES[tools.hlWidth] : PEN_SIZES[tools.penWidth],
 			simulated,
 			points: [x, y, simulated ? 0.5 : e.pressure],
+			hStart: this.entry.doc.h,
 		};
 		this.surface.beginLive();
 		this.scheduleLive();
@@ -136,6 +152,7 @@ export class PointerPipeline {
 				const n = g.points.length;
 				if (Math.hypot(x - g.points[n - 3], y - g.points[n - 2]) < MIN_STEP) continue;
 				g.points.push(x, y, g.simulated ? 0.5 : ev.pressure);
+				this.maybeGrow(y);
 			}
 		}
 		if (g.kind === "draw") this.scheduleLive();
@@ -156,7 +173,7 @@ export class PointerPipeline {
 			const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
 			// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
 			if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
-			const op: InkOp = { kind: "add", stroke, hBefore: this.entry.doc.h, hAfter: this.entry.doc.h };
+			const op: InkOp = { kind: "add", stroke, hBefore: g.hStart, hAfter: this.entry.doc.h };
 			applyOp(this.entry.doc, op);
 			this.surface.redraw([strokeBounds(stroke)]);
 			this.onOp(op);
@@ -171,9 +188,25 @@ export class PointerPipeline {
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
 		cancelAnimationFrame(this.frame);
-		if (g.kind === "draw") this.surface.endLive();
-		else if (g.kind === "erase" && g.removed.length) this.onOp({ kind: "erase", removed: g.removed });
+		if (g.kind === "draw") {
+			this.surface.endLive();
+			if (this.entry.doc.h !== g.hStart) {
+				this.entry.doc.h = g.hStart;
+				this.surface.resize();
+			}
+		} else if (g.kind === "erase" && g.removed.length) {
+			this.onOp({ kind: "erase", removed: g.removed });
+		}
 	};
+
+	private maybeGrow(y: number) {
+		const doc = this.entry.doc;
+		if (doc.space !== "nb" || y < doc.h - GROW_MARGIN) return;
+		doc.h += GROW_STEP;
+		this.surface.resize();
+		// Sichtbarer Ausschnitt kann sich vergrößert haben → Live-Canvas neu anlegen.
+		this.surface.beginLive();
+	}
 
 	private capture(e: PointerEvent) {
 		e.preventDefault();

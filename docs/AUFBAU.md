@@ -175,3 +175,15 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
   - OCR mit abgeschaltetem Netzwerk
 - **LiveSync:** 20 Striche in Schüben erzeugen höchstens 4 Revisionen der `.ink`-Datei. Die .md bekommt nur bei echter Textänderung eine Revision.
 - **Lernplattform:** Nach einem Import ist der OCR-Text über die FTS-Suche auffindbar (`src/lib/fts.ts`, keine Code-Änderung nötig).
+
+---
+
+## Umsetzungsnotizen (Abweichungen vom Plan)
+
+- **Strg+Z (M3):** Statt eines Obsidian-`Scope` bekommt die Fläche beim Antippen den Fokus (`tabindex=-1`). Ein `keydown`-Listener auf dem Block behandelt Strg+Z / Strg+Umschalt+Z / Strg+Y und stoppt die Propagation, damit CodeMirror nichts davon mitbekommt. Ein Klick außerhalb deaktiviert den Block.
+- **Fokus und Re-Render:** Liegen Fokus oder DOM-Auswahl im Widget, während der Blockinhalt geschrieben wird (`bgStyle`, später `text:`), übernimmt CodeMirror die Auswahl, und Live Preview klappt den Block in den Quelltext auf. Deshalb nehmen Toolbar-Buttons keinen Fokus (`preventDefault` auf mousedown), und vor jedem Schreiben wird der Fokus freigegeben (`releaseFocus`).
+- **Toolbar-Position:** Obsidians „Block bearbeiten“-Button (`</>`) liegt oben rechts im Codeblock-Widget. Die Leiste sitzt deshalb 44 px weiter links.
+- **Store-Cache:** Live Preview gibt beim Re-Render den alten Block frei, *bevor* der neue den Eintrag anfordert. Einträge bleiben deshalb nach der letzten Freigabe noch 10 s im Cache, damit Undo das Re-Render übersteht.
+- **Radieren über mehrere Schritte:** Die Erase-Op speichert die Indizes vom Beginn der Geste, damit Undo die ursprüngliche Reihenfolge exakt wiederherstellt.
+- **Druck:** Stifte, die durchgehend 0,5 melden (kein Drucksensor), werden wie Maus behandelt (`simulated`).
+- **Lazy-Init:** Ein eigener IntersectionObserver vor dem Laden war nicht nötig. Kacheln bekommen ihren Backing-Store erst, wenn sie sichtbar werden. Gemessen: 10 Blöcke × 150 Striche sind nach ca. 75 ms gezeichnet.

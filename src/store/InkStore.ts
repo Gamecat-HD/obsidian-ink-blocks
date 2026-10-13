@@ -1,5 +1,6 @@
 import { debounce, normalizePath, TFile, TFolder, type Debouncer, type TAbstractFile } from "obsidian";
 import type InkBlocksPlugin from "../main";
+import { History } from "../model/history";
 import { decodeInk, encodeInk, type InkData } from "../model/ink-format";
 import { mergeInk } from "../model/merge";
 
@@ -11,6 +12,8 @@ export interface InkEntry {
 	path: string;
 	doc: InkData;
 	dirty: boolean;
+	/** Liegt hier (nicht im Block), damit Undo ein Neu-Rendern in Live Preview übersteht. */
+	history: History;
 }
 
 interface Entry extends InkEntry {
@@ -20,9 +23,12 @@ interface Entry extends InkEntry {
 	base: InkData;
 	lastWritten: string;
 	save: Debouncer<[], Promise<void>>;
+	evictTimer?: number;
 }
 
 const SAVE_DELAY = 1500;
+/** Unbenutzte Einträge bleiben so lange im Speicher – Live Preview baut Blöcke bei Edits neu auf, Undo soll das überleben. */
+const EVICT_DELAY = 10_000;
 
 export class InkStore {
 	private readonly entries = new Map<string, Entry>();
@@ -47,6 +53,8 @@ export class InkStore {
 			entry = (await pending) ?? undefined;
 			if (!entry) return null;
 		}
+		window.clearTimeout(entry.evictTimer);
+		entry.evictTimer = undefined;
 		entry.refs++;
 		entry.listeners.add(listener);
 		return entry;
@@ -58,7 +66,9 @@ export class InkStore {
 		e.listeners.delete(listener);
 		if (--e.refs <= 0) {
 			e.save.run();
-			this.entries.delete(e.path);
+			e.evictTimer = window.setTimeout(() => {
+				if (e.refs <= 0 && this.entries.get(e.path) === e) this.entries.delete(e.path);
+			}, EVICT_DELAY);
 		}
 	}
 
@@ -81,6 +91,15 @@ export class InkStore {
 		await Promise.all([...this.entries.values()].map((e) => e.save.run()));
 	}
 
+	/** Beim Entladen: ausstehende Saves sofort, Timer weg. */
+	dispose() {
+		for (const e of this.entries.values()) {
+			window.clearTimeout(e.evictTimer);
+			void e.save.run();
+		}
+		this.entries.clear();
+	}
+
 	/** Legt eine neue .ink-Datei an (inkl. Ordner). */
 	async create(path: string, doc: InkData): Promise<TFile> {
 		const { vault } = this.plugin.app;
@@ -98,6 +117,7 @@ export class InkStore {
 			path,
 			doc,
 			dirty: false,
+			history: new History(),
 			refs: 0,
 			listeners: new Set(),
 			base: decodeInk(text),
@@ -138,6 +158,8 @@ export class InkStore {
 		}
 		entry.doc = entry.dirty ? mergeInk(entry.base, entry.doc, remote) : remote;
 		entry.base = remote;
+		// Ops beziehen sich auf den alten Stand – nach fremden Änderungen nicht mehr sicher umkehrbar.
+		entry.history.clear();
 		entry.lastWritten = text;
 		this.emit(entry, "reloaded");
 		if (entry.dirty) entry.save();
@@ -147,6 +169,7 @@ export class InkStore {
 		const entry = this.entries.get(file.path);
 		if (!entry) return;
 		entry.save.cancel();
+		window.clearTimeout(entry.evictTimer);
 		this.entries.delete(file.path);
 		this.emit(entry, "deleted");
 	}

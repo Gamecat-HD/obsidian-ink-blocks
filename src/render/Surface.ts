@@ -89,27 +89,47 @@ export class Surface {
 		this.el.dataset.strokes = String(this.doc.strokes.length);
 	}
 
-	/** Neu-Layout bei Größenänderung (oder erzwungen bei neuem Dokument). */
+	/** Neu-Layout bei Größenänderung. Bei gleicher Breite bleiben unveränderte Kacheln erhalten (Wachsen). */
 	layout(force = false) {
 		const width = this.el.clientWidth;
 		const dpr = window.devicePixelRatio || 1;
 		if (!width) return;
-		if (!force && width === this.cssWidth && dpr === this.dpr && this.tiles.length) return;
+		const sameGeometry = !force && width === this.cssWidth && dpr === this.dpr;
 		this.cssWidth = width;
 		this.dpr = dpr;
 		this.scale = scaleFor(this.doc.w, width);
 		this.applyPattern();
 
-		this.io.disconnect();
-		this.tilesEl.empty();
-		this.tiles = tileLayout(this.doc.h * this.scale).map((tile) => {
+		const wanted = tileLayout(this.doc.h * this.scale);
+		let keep = 0;
+		if (sameGeometry) {
+			while (
+				keep < this.tiles.length &&
+				keep < wanted.length &&
+				this.tiles[keep].tile.top === wanted[keep].top &&
+				this.tiles[keep].tile.height === wanted[keep].height
+			) {
+				keep++;
+			}
+			if (keep === this.tiles.length && keep === wanted.length) return;
+		}
+		for (const t of this.tiles.splice(keep)) {
+			this.io.unobserve(t.canvas);
+			t.canvas.remove();
+		}
+		for (const tile of wanted.slice(keep)) {
 			const canvas = this.tilesEl.createEl("canvas", { cls: "ink-tile" });
 			canvas.style.top = `${tile.top}px`;
 			canvas.style.height = `${tile.height}px`;
-			const state: TileState = { tile, canvas, visible: false };
+			this.tiles.push({ tile, canvas, visible: false });
 			this.io.observe(canvas);
-			return state;
-		});
+		}
+	}
+
+	/** Höhe des Dokuments hat sich geändert (Wachsen oder Undo). */
+	resize() {
+		this.updateSize();
+		this.layout();
 	}
 
 	redrawAll() {

@@ -2,20 +2,25 @@ import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, 
 import { PointerPipeline } from "../input/PointerPipeline";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
-import type { InkOp } from "../model/ops";
+import { opBounds, type InkOp } from "../model/ops";
 import { Surface } from "../render/Surface";
 import type { BgStyle } from "../settings";
 import type { InkEntry, InkEvent } from "../store/InkStore";
+import { Toolbar } from "../ui/Toolbar";
+import { writeBlockField } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
 
+const BG_CYCLE: BgStyle[] = ["ruled", "grid", "blank"];
+
 /**
- * Ein gerenderter ```ink-Block. Der Zustand lebt im InkStore – Live Preview baut diese Instanz bei
- * jeder Änderung am Blockinhalt neu auf (siehe docs/SPIKES.md, S4).
+ * Ein gerenderter ```ink-Block. Der Zustand (Dokument, Undo) lebt im InkStore – Live Preview baut
+ * diese Instanz bei jeder Änderung am Blockinhalt neu auf (siehe docs/SPIKES.md, S4).
  */
 export class InkBlockChild extends MarkdownRenderChild {
 	private entry: InkEntry | null = null;
 	private surface: Surface | null = null;
 	private pipeline: PointerPipeline | null = null;
+	private toolbar: Toolbar | null = null;
 	private fields: BlockFields;
 	private alive = false;
 
@@ -38,6 +43,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.plugin.blocks.add(this);
 		this.plugin.dev.loaded++;
 		this.containerEl.addClass("ink-block");
+		// Auf dem ganzen Block, damit Strg+Z auch nach Klicks auf die Leiste greift.
+		this.registerDomEvent(this.containerEl, "keydown", this.onKeyDown);
 		this.containerEl.dataset.instance = String(this.plugin.dev.loaded);
 		void this.mount();
 	}
@@ -55,6 +62,16 @@ export class InkBlockChild extends MarkdownRenderChild {
 	refresh() {
 		this.surface?.setBgStyle(this.bgStyle);
 		this.surface?.redrawAll();
+		this.toolbar?.update();
+	}
+
+	updateToolbar() {
+		this.toolbar?.update();
+	}
+
+	/** Deaktiviert den Block, wenn `target` außerhalb liegt. */
+	deactivateUnless(target: Node) {
+		if (!this.containerEl.contains(target)) this.containerEl.removeClass("is-active");
 	}
 
 	private get bgStyle(): BgStyle {
@@ -65,8 +82,10 @@ export class InkBlockChild extends MarkdownRenderChild {
 	private teardown() {
 		this.pipeline?.destroy();
 		this.surface?.destroy();
+		this.toolbar?.destroy();
 		this.pipeline = null;
 		this.surface = null;
+		this.toolbar = null;
 	}
 
 	private async mount() {
@@ -110,15 +129,89 @@ export class InkBlockChild extends MarkdownRenderChild {
 		} else if (this.entry) {
 			// Neu geladen (Sync) oder von einem anderen Block derselben Datei geändert.
 			this.surface?.setDoc(this.entry.doc);
+			this.toolbar?.update();
 		}
 	};
 
-	private readonly onOp = (_op: InkOp) => {
+	private readonly onOp = (op: InkOp) => {
+		const entry = this.entry;
+		if (!entry) return;
+		entry.history.push(op);
+		this.commit();
+	};
+
+	private commit() {
 		const entry = this.entry;
 		if (!entry) return;
 		this.plugin.store.touch(entry);
 		this.plugin.store.changed(entry, this.onStoreEvent);
+		this.toolbar?.update();
+	}
+
+	private undo() {
+		const entry = this.entry;
+		const op = entry && entry.history.undo(entry.doc);
+		if (op) this.afterHistory(op);
+	}
+
+	private redo() {
+		const entry = this.entry;
+		const op = entry && entry.history.redo(entry.doc);
+		if (op) this.afterHistory(op);
+	}
+
+	private afterHistory(op: InkOp) {
+		this.surface?.resize();
+		this.surface?.redraw(opBounds(op));
+		this.commit();
+	}
+
+	private readonly activate = () => {
+		this.containerEl.addClass("is-active");
+		this.surface?.el.focus({ preventScroll: true });
 	};
+
+	/**
+	 * Fokus/Auswahl aus dem Widget nehmen, bevor der Blockinhalt geschrieben wird – sonst übernimmt
+	 * CodeMirror beim Re-Render die DOM-Auswahl und Live Preview klappt den Block in den Quelltext auf.
+	 */
+	private releaseFocus() {
+		const active = document.activeElement;
+		if (active instanceof HTMLElement && this.containerEl.contains(active)) active.blur();
+		const sel = window.getSelection();
+		if (sel?.anchorNode && this.containerEl.contains(sel.anchorNode)) sel.removeAllRanges();
+		this.containerEl.removeClass("is-active");
+	}
+
+	private readonly onKeyDown = (e: KeyboardEvent) => {
+		const mod = e.ctrlKey || e.metaKey;
+		const key = e.key.toLowerCase();
+		let handled = true;
+		if (mod && key === "z" && !e.shiftKey) this.undo();
+		else if (mod && ((key === "z" && e.shiftKey) || key === "y")) this.redo();
+		else if (e.key === "Escape") {
+			this.containerEl.removeClass("is-active");
+			this.surface?.el.blur();
+		} else handled = false;
+		if (handled) {
+			// Nicht an CodeMirror weiterreichen – sonst würde zusätzlich der Notiztext rückgängig gemacht.
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	};
+
+	private cycleBg() {
+		const path = this.path;
+		if (!path) return;
+		const next = BG_CYCLE[(BG_CYCLE.indexOf(this.bgStyle) + 1) % BG_CYCLE.length];
+		const hint = this.ctx.getSectionInfo(this.containerEl)?.lineStart;
+		// Live Preview rendert den Block danach neu; Dokument und Undo bleiben im Store.
+		this.fields.bgStyle = next;
+		this.surface?.setBgStyle(next);
+		this.toolbar?.update();
+		this.releaseFocus();
+		void writeBlockField(this.plugin.app, this.ctx.sourcePath, path, "bgStyle", next, hint);
+	}
 
 	private render() {
 		const entry = this.entry;
@@ -126,9 +219,20 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.teardown();
 		this.containerEl.empty();
 		this.containerEl.removeClass("is-message");
+		this.toolbar = new Toolbar(this.containerEl, this.plugin, {
+			undo: () => this.undo(),
+			redo: () => this.redo(),
+			canUndo: () => !!this.entry?.history.canUndo,
+			canRedo: () => !!this.entry?.history.canRedo,
+			bgStyle: () => (this.entry?.doc.space === "nb" ? this.bgStyle : null),
+			cycleBg: () => this.cycleBg(),
+		});
+		// Klick auf die Leiste aktiviert den Block ebenfalls (Capture: die Leiste stoppt die Propagation).
+		this.toolbar.el.addEventListener("pointerdown", this.activate, { capture: true });
 		this.surface = new Surface(this.containerEl, entry.doc, this.bgStyle);
 		this.surface.el.dataset.path = entry.path;
-		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp);
+		this.surface.el.tabIndex = -1;
+		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp, this.activate);
 	}
 
 	private showMessage(title: string, detail?: string) {

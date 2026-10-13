@@ -93,3 +93,105 @@
 	justify-content: flex-end;
 	margin-top: var(--size-4-3);
 }
+
+/* ---- Werkzeugleiste ---- */
+
+.ink-surface:focus,
+.ink-surface:focus-visible {
+	outline: none;
+}
+
+.ink-block.is-active .ink-surface {
+	border-color: var(--interactive-accent);
+}
+
+.ink-toolbar-anchor {
+	position: sticky;
+	top: var(--size-4-2);
+	height: 0;
+	z-index: 5;
+}
+
+.ink-toolbar {
+	position: absolute;
+	top: var(--size-4-2);
+	/* Platz lassen für Obsidians „Block bearbeiten“-Button (</>) oben rechts in Live Preview. */
+	right: 44px;
+	display: flex;
+	gap: var(--size-4-1);
+	padding: var(--size-2-1);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	background: var(--background-secondary);
+	box-shadow: var(--shadow-s);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.ink-block:hover .ink-toolbar,
+.ink-block.is-active .ink-toolbar {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.ink-tb-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.ink-tb-group + .ink-tb-group {
+	padding-left: var(--size-4-1);
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.ink-toolbar button {
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	box-shadow: none;
+}
+
+.ink-toolbar button.is-active {
+	background: var(--background-modifier-active-hover);
+	color: var(--interactive-accent);
+}
+
+.ink-toolbar button.is-disabled {
+	opacity: 0.35;
+	pointer-events: none;
+}
+
+.ink-tb-swatch::after {
+	content: "";
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--swatch);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.ink-toolbar.is-eraser .ink-tb-swatch,
+.ink-toolbar.is-eraser .ink-tb-width {
+	opacity: 0.4;
+}
+
+.ink-tb-dot {
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.ink-tb-dot.is-fine {
+	width: 5px;
+	height: 5px;
+}
+
+.ink-tb-dot.is-bold {
+	width: 11px;
+	height: 11px;
+}
