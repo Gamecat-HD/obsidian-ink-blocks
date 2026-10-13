@@ -1,4 +1,4 @@
-// M8: Live-Strich ohne desynchronized-Canvas, Ausklappen (große Fläche im Dialog, Undo, Esc),
+// M8: Live-Strich ohne eigenen Canvas, Ausklappen (große Fläche im Dialog, Undo, Esc),
 // eingebettete Bilder/PDFs beschriften (Hover-Button und Befehl, auch mitten im Text).
 import assert from "node:assert/strict";
 const ID = "obsidian-ink-blocks";
@@ -21,8 +21,8 @@ export default async (h) => {
 		return { x: r.x, y: r.y, w: r.width, path: el.dataset.path };
 	});
 
-	// 1. Live-Canvas ohne desynchronized
-	assert.equal(await h.evaluate(() => document.querySelector(".ink-live").getContext("2d").getContextAttributes().desynchronized), false);
+	// 1. Kein eigener Live-Canvas mehr (Live-Strich liegt auf den Kacheln, siehe m2)
+	assert.equal(await h.evaluate(() => document.querySelectorAll(".ink-live").length), 0);
 
 	// 2. Ausklappen
 	await move(block.x + block.w - 80, block.y + 30);

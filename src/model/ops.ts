@@ -14,25 +14,33 @@ export interface Bounds {
 
 const boundsCache = new WeakMap<Stroke, Bounds>();
 
-/** Bounding-Box inkl. halber Strichbreite (Doc-Einheiten). */
+/** Bounding-Box inkl. Strichradius (Doc-Einheiten). */
 export function strokeBounds(stroke: Stroke): Bounds {
 	let b = boundsCache.get(stroke);
-	if (b) return b;
-	const pad = stroke.size / 2 + 1;
+	if (!b) {
+		b = pointsBounds(stroke.points, stroke.size);
+		boundsCache.set(stroke, b);
+	}
+	return b;
+}
+
+/**
+ * Bounding-Box flacher Punkte `[x, y, p, …]` inkl. Strichradius. perfect-freehand macht den Radius bei
+ * vollem Druck bis zu 0,8 × `size` groß (thinning 0.6), nicht nur `size / 2`.
+ */
+export function pointsBounds(p: number[], size: number): Bounds {
+	const pad = size * 0.8 + 1;
 	let minX = Infinity;
 	let minY = Infinity;
 	let maxX = -Infinity;
 	let maxY = -Infinity;
-	const p = stroke.points;
 	for (let i = 0; i < p.length; i += 3) {
 		if (p[i] < minX) minX = p[i];
 		if (p[i] > maxX) maxX = p[i];
 		if (p[i + 1] < minY) minY = p[i + 1];
 		if (p[i + 1] > maxY) maxY = p[i + 1];
 	}
-	b = { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
-	boundsCache.set(stroke, b);
-	return b;
+	return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
 }
 
 export function applyOp(doc: InkData, op: InkOp) {

@@ -31,8 +31,7 @@
 }
 
 .ink-tiles,
-.ink-tile,
-.ink-live {
+.ink-tile {
 	position: absolute;
 	left: 0;
 	width: 100%;
@@ -42,10 +41,6 @@
 .ink-tiles {
 	top: 0;
 	height: 100%;
-}
-
-.ink-live {
-	display: none;
 }
 
 .ink-message {

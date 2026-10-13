@@ -1,6 +1,6 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
-import { applyOp, opBounds, strokeBounds, type InkOp } from "../model/ops";
+import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
 import { HL_SIZES, outlinePath, PEN_SIZES } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
@@ -46,7 +46,6 @@ export class PointerPipeline {
 	private gesture: Gesture | null = null;
 	private penDown = false;
 	private penUntil = 0;
-	private frame = 0;
 
 	constructor(
 		private readonly plugin: InkBlocksPlugin,
@@ -72,7 +71,6 @@ export class PointerPipeline {
 	}
 
 	destroy() {
-		cancelAnimationFrame(this.frame);
 		this.gesture = null;
 		this.setDrawing(false);
 	}
@@ -127,8 +125,7 @@ export class PointerPipeline {
 			points: [x, y, simulated ? 0.5 : e.pressure],
 			hStart: this.entry.doc.h,
 		};
-		this.surface.beginLive();
-		this.scheduleLive();
+		this.renderLive();
 	};
 
 	private readonly onMove = (e: PointerEvent) => {
@@ -156,7 +153,8 @@ export class PointerPipeline {
 				this.maybeGrow(y);
 			}
 		}
-		if (g.kind === "draw") this.scheduleLive();
+		// Synchron malen (wie der Pen-Diagnose-Dialog): Chromium liefert pointermove ohnehin im Frame-Takt.
+		if (g.kind === "draw") this.renderLive();
 	};
 
 	private readonly onUp = (e: PointerEvent) => {
@@ -168,10 +166,8 @@ export class PointerPipeline {
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
 		this.setDrawing(false);
-		cancelAnimationFrame(this.frame);
 
 		if (g.kind === "draw") {
-			this.surface.endLive();
 			const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
 			// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
 			if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
@@ -190,9 +186,8 @@ export class PointerPipeline {
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
 		this.setDrawing(false);
-		cancelAnimationFrame(this.frame);
 		if (g.kind === "draw") {
-			this.surface.endLive();
+			this.surface.clearLive();
 			if (this.entry.doc.h !== g.hStart) {
 				this.entry.doc.h = g.hStart;
 				this.surface.resize();
@@ -207,8 +202,6 @@ export class PointerPipeline {
 		if (doc.space !== "nb" || y < doc.h - GROW_MARGIN) return;
 		doc.h += GROW_STEP;
 		this.surface.resize();
-		// Sichtbarer Ausschnitt kann sich vergrößert haben → Live-Canvas neu anlegen.
-		this.surface.beginLive();
 	}
 
 	/** Während eines Strichs blendet die Werkzeugleiste aus (CSS `.is-drawing`). */
@@ -231,13 +224,14 @@ export class PointerPipeline {
 		return this.surface.el.closest<HTMLElement>(".ink-expanded-scroll, .cm-scroller, .markdown-preview-view");
 	}
 
-	private scheduleLive() {
-		if (this.frame) return;
-		this.frame = requestAnimationFrame(() => {
-			this.frame = 0;
-			const g = this.gesture;
-			if (g?.kind !== "draw") return;
-			this.surface.drawLive(outlinePath(g.points, g, false), g.color, g.tool === "hl");
+	private renderLive() {
+		const g = this.gesture;
+		if (g?.kind !== "draw") return;
+		this.surface.drawLive({
+			path: outlinePath(g.points, g, false),
+			bounds: pointsBounds(g.points, g.size),
+			color: g.color,
+			highlighter: g.tool === "hl",
 		});
 	}
 

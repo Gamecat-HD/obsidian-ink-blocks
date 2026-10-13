@@ -54,9 +54,11 @@ describe("Ops", () => {
 		expect(doc.strokes.map((s) => s.id)).toEqual(["a", "b"]);
 		expect(doc.h).toBe(400);
 	});
-	it("strokeBounds enthält die halbe Strichbreite", () => {
-		expect(strokeBounds(stroke("b", [10, 20, 0.5, 30, 5, 0.5], 4))).toEqual({ minX: 7, minY: 2, maxX: 33, maxY: 23 });
+	it("strokeBounds enthält den Strichradius (bis 0,8 × size)", () => {
+		const b = strokeBounds(stroke("b", [10, 20, 0.5, 30, 5, 0.5], 4));
+		for (const [k, v] of Object.entries({ minX: 5.8, minY: 0.8, maxX: 34.2, maxY: 24.2 })) expect(b[k as keyof typeof b]).toBeCloseTo(v);
 	});
+
 });
 
 describe("Kacheln", () => {

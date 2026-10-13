@@ -59,7 +59,7 @@ export default async (h) => {
 	assert.deepEqual(s.cursor, cursorBefore, "Zeichnen hat den Editor-Cursor bewegt");
 	assert.ok(await h.evaluate(() => !!document.querySelector(".markdown-source-view .ink-surface")), "Block nicht mehr gerendert");
 
-	// 1b. Während des Strichs: Live-Canvas sichtbar und bemalt, noch kein Strich im Dokument
+	// 1b. Während des Strichs: schon auf den Kacheln sichtbar (ohne eigenen Live-Canvas), noch nicht im Dokument
 	const mv = (type, [px, py], buttons = 1) =>
 		h.cdp.send("Input.dispatchMouseEvent", { type, x: px, y: py, button: "left", buttons, clickCount: 1, pointerType: "pen", force: 0.6 });
 	const mid = line(240, 0.6, 0.9, 12);
@@ -67,20 +67,30 @@ export default async (h) => {
 	await mv("mousePressed", mid[0]);
 	for (const p of mid.slice(1)) await mv("mouseMoved", p);
 	await h.sleep(100);
-	const live = await h.evaluate(() => {
-		const c = document.querySelector(".markdown-source-view .ink-live");
-		const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-		let n = 0;
-		for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
-		return { display: c.style.display, painted: n };
-	});
-	assert.equal(live.display, "block");
-	assert.ok(live.painted > 50, `Live-Canvas leer (${live.painted})`);
+	assert.ok(await inked(mid[6][0], mid[6][1]), "Live-Strich während des Zeichnens nicht sichtbar");
+	assert.equal(await h.evaluate(() => document.querySelectorAll(".ink-live").length), 0, "Live-Canvas sollte es nicht mehr geben");
 	assert.equal((await info()).strokes.length, 1, "Strich vor dem Absetzen schon im Dokument");
 	await mv("mouseReleased", mid.at(-1), 0);
 	await h.sleep(100);
 	assert.equal((await info()).strokes.length, 2);
-	assert.equal(await h.evaluate(() => document.querySelector(".markdown-source-view .ink-live").style.display), "none");
+	assert.ok(await inked(mid[6][0], mid[6][1]), "Strich nach dem Absetzen weg");
+
+	// 1c. Abbruch (pointercancel) entfernt den Live-Strich wieder
+	await h.evaluate((pts) => {
+		const el = document.querySelector(".markdown-source-view .ink-surface");
+		const fire = (type, [cx, cy]) =>
+			el.dispatchEvent(new PointerEvent(type, { pointerId: 78, pointerType: "pen", buttons: 1, clientX: cx, clientY: cy, pressure: 0.6, bubbles: true, cancelable: true }));
+		fire("pointerdown", pts[0]);
+		for (const p of pts.slice(1)) fire("pointermove", p);
+	}, line(300, 0.6, 0.9, 12));
+	const cancelAt = line(300, 0.6, 0.9, 12)[6];
+	assert.ok(await inked(cancelAt[0], cancelAt[1]), "Live-Strich (synthetisch) nicht sichtbar");
+	await h.evaluate(([cx, cy]) => {
+		const el = document.querySelector(".markdown-source-view .ink-surface");
+		el.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 78, pointerType: "pen", clientX: cx, clientY: cy, bubbles: true }));
+	}, cancelAt);
+	assert.equal(await inked(cancelAt[0], cancelAt[1]), false, "Abgebrochener Live-Strich noch sichtbar");
+	assert.equal((await info()).strokes.length, 2, "Abgebrochener Strich im Dokument");
 	// Für die folgenden Schritte wieder entfernen
 	await h.evaluate((id) => { const st = app.plugins.plugins[id].store; const e = [...st.entries.values()][0]; e.doc.strokes.pop(); }, ID);
 
