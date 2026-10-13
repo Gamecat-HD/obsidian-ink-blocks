@@ -6,9 +6,6 @@ import { svgPathFromOutline } from "./svgPath";
 export const PALETTE = ["ink", "#1c7ed6", "#e03131", "#fab005", "#40c057", "#f06595"];
 export const PEN_COLORS = [0, 1, 2];
 export const HL_COLORS = [3, 4, 5];
-/** Strichbreiten in Doc-Einheiten (1000 = Blockbreite). */
-export const PEN_SIZES = [2.6, 4.6] as const;
-export const HL_SIZES = [16, 28] as const;
 export const HL_ALPHA = 0.35;
 
 interface StrokeStyle {

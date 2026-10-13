@@ -1,16 +1,17 @@
-import { setIcon, setTooltip } from "obsidian";
+import { Menu, setIcon, setTooltip } from "obsidian";
 import type InkBlocksPlugin from "../main";
+import { GAP_PRESETS, type BgStyle, type Pattern, type PatternChange } from "../model/pattern";
 import { HL_COLORS, PALETTE, PEN_COLORS } from "../render/strokes";
-import type { BgStyle, ToolId } from "../settings";
+import type { ToolId, WidthSlot } from "../settings";
 
 export interface ToolbarActions {
 	undo(): void;
 	redo(): void;
 	canUndo(): boolean;
 	canRedo(): boolean;
-	/** `null` = kein Hintergrund-Umschalter (Arbeitsblatt – dort ist „Tinte“ schwarz). */
-	bgStyle(): BgStyle | null;
-	cycleBg(): void;
+	/** `null` = kein Hintergrund-Menü (Arbeitsblatt – dort ist „Tinte“ schwarz). */
+	pattern(): Pattern | null;
+	setPattern(change: PatternChange): void;
 	/** Ausklappen/Einklappen (fehlt → kein Button). */
 	toggleExpand?: () => void;
 	/** Leiste gehört zur ausgeklappten Ansicht. */
@@ -24,10 +25,16 @@ const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 ];
 
 const BG_ICON: Record<BgStyle, { icon: string; label: string }> = {
-	ruled: { icon: "align-justify", label: "Hintergrund: liniert" },
-	grid: { icon: "grid-3x3", label: "Hintergrund: kariert" },
-	blank: { icon: "square", label: "Hintergrund: leer" },
+	ruled: { icon: "align-justify", label: "Liniert" },
+	grid: { icon: "grid", label: "Kariert" },
+	blank: { icon: "square", label: "Leer" },
 };
+
+const WIDTHS: { slot: WidthSlot; label: string; cls: string }[] = [
+	{ slot: 0, label: "Fein", cls: "is-fine" },
+	{ slot: 1, label: "Mittel", cls: "is-medium" },
+	{ slot: 2, label: "Breit", cls: "is-bold" },
+];
 
 /**
  * Schwebende Mini-Werkzeugleiste am Block. Der Werkzeugzustand ist global (Settings),
@@ -75,18 +82,18 @@ export class Toolbar {
 		}
 
 		const widths = this.group();
-		for (const w of [0, 1] as const) {
+		for (const w of WIDTHS) {
 			const btn = widths.createEl("button", { cls: "ink-tb-width clickable-icon" });
-			btn.createSpan({ cls: `ink-tb-dot is-${w ? "bold" : "fine"}` });
-			setTooltip(btn, w ? "Breit" : "Fein");
-			btn.addEventListener("click", () => this.setWidth(w));
+			btn.createSpan({ cls: `ink-tb-dot ${w.cls}` });
+			setTooltip(btn, w.label);
+			btn.addEventListener("click", () => this.setWidth(w.slot));
 			this.widths.push(btn);
 		}
 
 		const edit = this.group();
 		this.undoBtn = this.button(edit, "undo-2", "Rückgängig (Strg+Z)", () => actions.undo());
 		this.redoBtn = this.button(edit, "redo-2", "Wiederholen (Strg+Umschalt+Z)", () => actions.redo());
-		this.bgBtn = this.button(edit, "align-justify", "Hintergrund", () => actions.cycleBg());
+		this.bgBtn = this.button(edit, "align-justify", "Hintergrund", () => this.showPatternMenu());
 		if (actions.toggleExpand) {
 			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
 			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
@@ -108,8 +115,8 @@ export class Toolbar {
 		const hl = t.tool === "hl";
 		const palette = hl ? HL_COLORS : PEN_COLORS;
 		const current = hl ? t.hlColor : t.penColor;
-		const bg = this.actions.bgStyle();
-		const ink = bg === null ? "#111" : "var(--text-normal)";
+		const pattern = this.actions.pattern();
+		const ink = pattern === null ? "#111" : "var(--text-normal)";
 		this.swatches.forEach((sw, i) => {
 			const index = palette[i];
 			sw.style.setProperty("--swatch", PALETTE[index] === "ink" ? ink : PALETTE[index]);
@@ -123,11 +130,11 @@ export class Toolbar {
 
 		this.undoBtn.toggleClass("is-disabled", !this.actions.canUndo());
 		this.redoBtn.toggleClass("is-disabled", !this.actions.canRedo());
-		this.bgBtn.toggle(bg !== null);
-		if (bg) {
-			setIcon(this.bgBtn, BG_ICON[bg].icon);
-			setTooltip(this.bgBtn, BG_ICON[bg].label);
-			this.bgBtn.dataset.bg = bg;
+		this.bgBtn.toggle(pattern !== null);
+		if (pattern) {
+			setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
+			setTooltip(this.bgBtn, `Hintergrund: ${BG_ICON[pattern.style].label.toLowerCase()}`);
+			this.bgBtn.dataset.bg = pattern.style;
 		}
 	}
 
@@ -159,7 +166,43 @@ export class Toolbar {
 		this.plugin.toolsChanged();
 	}
 
-	private setWidth(w: 0 | 1) {
+	/** Hintergrund-Menü: Stil und Linienabstand/Kästchengröße dieser Fläche (touch-tauglich). */
+	private showPatternMenu() {
+		const p = this.actions.pattern();
+		if (!p) return;
+		const menu = new Menu();
+		for (const style of ["ruled", "grid", "blank"] as const) {
+			menu.addItem((item) =>
+				item
+					.setTitle(BG_ICON[style].label)
+					.setIcon(BG_ICON[style].icon)
+					.setChecked(p.style === style)
+					.onClick(() => this.actions.setPattern({ style })),
+			);
+		}
+		if (p.style !== "blank") {
+			menu.addSeparator();
+			const what = p.style === "grid" ? "Kästchen" : "Abstand";
+			for (const preset of GAP_PRESETS[p.style]) {
+				menu.addItem((item) =>
+					item
+						.setTitle(`${what}: ${preset.label}`)
+						.setChecked(p.custom && p.gap === preset.value)
+						.onClick(() => this.actions.setPattern({ gap: preset.value })),
+				);
+			}
+			menu.addItem((item) =>
+				item
+					.setTitle(`${what}: Standard`)
+					.setChecked(!p.custom)
+					.onClick(() => this.actions.setPattern({ gap: null })),
+			);
+		}
+		const r = this.bgBtn.getBoundingClientRect();
+		menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
+	}
+
+	private setWidth(w: WidthSlot) {
 		const t = this.plugin.settings.tools;
 		if (t.tool === "hl") t.hlWidth = w;
 		else {

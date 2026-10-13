@@ -4,7 +4,7 @@ import type InkBlocksPlugin from "../main";
 import { opBounds, type InkOp } from "../model/ops";
 import { PageBackground } from "../render/background";
 import { Surface } from "../render/Surface";
-import type { BgStyle } from "../settings";
+import type { Pattern, PatternChange } from "../model/pattern";
 import type { InkEntry } from "../store/InkStore";
 import { Toolbar } from "../ui/Toolbar";
 
@@ -13,8 +13,8 @@ export type ResolvedBackground = { file: TFile; page: number } | { error: string
 export interface InkEditorHost {
 	plugin: InkBlocksPlugin;
 	entry: InkEntry;
-	bgStyle(): BgStyle;
-	cycleBg(): void;
+	pattern(): Pattern;
+	setPattern(change: PatternChange): void;
 	background: ResolvedBackground;
 	/** Nach jeder Änderung (Strich, Radieren, Undo/Redo): speichern, andere Ansichten, Texterkennung. */
 	commit(): void;
@@ -44,14 +44,14 @@ export class InkEditor {
 			redo: () => this.redo(),
 			canUndo: () => entry.history.canUndo,
 			canRedo: () => entry.history.canRedo,
-			bgStyle: () => (entry.doc.space === "nb" ? host.bgStyle() : null),
-			cycleBg: () => host.cycleBg(),
+			pattern: () => (entry.doc.space === "nb" ? host.pattern() : null),
+			setPattern: (change) => host.setPattern(change),
 			toggleExpand: host.toggleExpand ? () => host.toggleExpand?.() : undefined,
 			expanded: !!host.expanded,
 		});
 		// Klick auf die Leiste aktiviert die Ansicht ebenfalls (Capture: die Leiste stoppt die Propagation).
 		this.toolbar.el.addEventListener("pointerdown", () => host.activate(), { capture: true });
-		this.surface = new Surface(container, entry.doc, host.bgStyle());
+		this.surface = new Surface(container, entry.doc, host.pattern());
 		this.surface.el.dataset.path = entry.path;
 		this.surface.el.tabIndex = -1;
 		this.pipeline = new PointerPipeline(plugin, entry, this.surface, this.onOp, () => host.activate());
@@ -82,7 +82,7 @@ export class InkEditor {
 	}
 
 	refresh() {
-		this.surface.setBgStyle(this.host.bgStyle());
+		this.surface.setPattern(this.host.pattern());
 		this.surface.redrawAll();
 		this.toolbar.update();
 	}

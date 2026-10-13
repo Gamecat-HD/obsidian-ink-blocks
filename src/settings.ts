@@ -1,55 +1,11 @@
 import { normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InkBlocksPlugin from "./main";
 import { ENGINE_ORDER, ENGINES, engineFiles, type EngineId } from "./ocr/models";
+import type { BgStyle } from "./model/pattern";
+import { DEFAULT_SETTINGS, LIMITS, type InkSettings, type WidthSizes } from "./settingsData";
 
-export type BgStyle = "ruled" | "grid" | "blank";
-export type ToolId = "pen" | "hl" | "eraser";
-
-/** Zustand der Werkzeugleiste – gilt für alle Blöcke. */
-export interface ToolState {
-	tool: ToolId;
-	/** Palettenindex für Stift (0–2) bzw. Textmarker (3–5). */
-	penColor: number;
-	hlColor: number;
-	/** 0 = fein, 1 = breit */
-	penWidth: 0 | 1;
-	hlWidth: 0 | 1;
-}
-
-export interface InkSettings {
-	/** Ordner für die .ink-Dateien, relativ zum Vault. */
-	folder: string;
-	/** Hintergrund neuer Schreibflächen im Heft-Modus. */
-	bgStyle: BgStyle;
-	/** Finger zeichnen nicht, sondern scrollen (Stift und Maus zeichnen). */
-	penOnly: boolean;
-	/** Maus zeichnet. */
-	mouseDraws: boolean;
-	/** Seitentaste des Stifts radiert (zusätzlich zum Radierer-Ende). */
-	barrelErases: boolean;
-	tools: ToolState;
-	/** Handschrift lokal erkennen und ins `text:`-Feld schreiben. */
-	ocrEnabled: boolean;
-	/** Ruhepause nach dem letzten Strich, bevor erkannt wird (Sekunden). */
-	ocrDelay: number;
-	/** „auto“ = de-htr-web-v2 → v1 → Tesseract.js, je nachdem was geladen ist und funktioniert. */
-	ocrEngine: "auto" | EngineId;
-	/** Erkannten Text dezent unter dem Block anzeigen. */
-	showText: boolean;
-}
-
-export const DEFAULT_SETTINGS: InkSettings = {
-	folder: "_ink",
-	bgStyle: "ruled",
-	penOnly: true,
-	mouseDraws: true,
-	barrelErases: true,
-	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0 },
-	ocrEnabled: true,
-	ocrDelay: 10,
-	ocrEngine: "auto",
-	showText: true,
-};
+export type { BgStyle } from "./model/pattern";
+export * from "./settingsData";
 
 export class InkSettingTab extends PluginSettingTab {
 	constructor(private readonly plugin: InkBlocksPlugin) {
@@ -86,6 +42,15 @@ export class InkSettingTab extends PluginSettingTab {
 						this.plugin.refreshBlocks();
 					}),
 			);
+
+		this.slider("Linienabstand (liniert)", "Abstand der Linien. Je Fläche änderbar über den Hintergrund-Knopf der Leiste.", LIMITS.ruledGap, 1,
+			() => this.plugin.settings.ruledGap, (v) => (this.plugin.settings.ruledGap = v), () => this.plugin.refreshBlocks());
+		this.slider("Kästchengröße (kariert)", "Größe der Kästchen. Je Fläche änderbar über den Hintergrund-Knopf der Leiste.", LIMITS.gridGap, 1,
+			() => this.plugin.settings.gridGap, (v) => (this.plugin.settings.gridGap = v), () => this.plugin.refreshBlocks());
+
+		new Setting(containerEl).setName("Strichbreiten").setDesc("Gelten für neue Striche; Vorhandenes bleibt, wie es ist.").setHeading();
+		this.sizeSliders("Stift", "penSizes", LIMITS.penSize, 0.2);
+		this.sizeSliders("Textmarker", "hlSizes", LIMITS.hlSize, 1);
 
 		new Setting(containerEl).setName("Eingabe").setHeading();
 		this.toggle("Nur Stift zeichnet", "Finger scrollen die Notiz statt zu zeichnen (Handballen werden ignoriert).", "penOnly");
@@ -157,6 +122,43 @@ export class InkSettingTab extends PluginSettingTab {
 					}),
 			);
 		});
+	}
+
+	private sizeSliders(label: string, key: "penSizes" | "hlSizes", limits: readonly [number, number], step: number) {
+		(["fein", "mittel", "breit"] as const).forEach((name, i) => {
+			this.slider(`${label} ${name}`, "", limits, step,
+				() => this.plugin.settings[key][i],
+				(v) => {
+					const sizes: WidthSizes = [...this.plugin.settings[key]];
+					sizes[i] = v;
+					this.plugin.settings[key] = sizes;
+				});
+		});
+	}
+
+	private slider(
+		name: string,
+		desc: string,
+		[min, max]: readonly [number, number],
+		step: number,
+		get: () => number,
+		set: (v: number) => void,
+		after?: () => void,
+	) {
+		new Setting(this.containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addSlider((sl) =>
+				sl
+					.setLimits(min, max, step)
+					.setValue(get())
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						set(v);
+						await this.plugin.saveSettings();
+						after?.();
+					}),
+			);
 	}
 
 	private toggle(

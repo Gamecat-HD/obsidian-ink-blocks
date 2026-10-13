@@ -2,14 +2,14 @@ import { Modal } from "obsidian";
 import { InkEditor, type ResolvedBackground } from "../block/InkEditor";
 import type InkBlocksPlugin from "../main";
 import type { OcrTarget } from "../ocr/OcrService";
-import type { BgStyle } from "../settings";
+import type { Pattern, PatternChange } from "../model/pattern";
 import type { InkEntry, InkEvent } from "../store/InkStore";
 
 export interface ExpandOptions {
 	plugin: InkBlocksPlugin;
 	inkPath: string;
-	bgStyle(): BgStyle;
-	cycleBg(): void;
+	pattern(): Pattern;
+	setPattern(change: PatternChange): void;
 	background: ResolvedBackground;
 	/** Texterkennung zielt weiter auf den Block in der Notiz. */
 	ocrTarget(): OcrTarget | null;
@@ -40,9 +40,9 @@ export class ExpandModal extends Modal {
 		this.editor = new InkEditor(container, {
 			plugin,
 			entry,
-			bgStyle: () => this.opts.bgStyle(),
-			cycleBg: () => {
-				this.opts.cycleBg();
+			pattern: () => this.opts.pattern(),
+			setPattern: (change) => {
+				this.opts.setPattern(change);
 				this.editor?.refresh();
 			},
 			background: this.opts.background,

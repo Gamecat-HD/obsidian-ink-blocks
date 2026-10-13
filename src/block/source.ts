@@ -14,6 +14,8 @@ export interface BlockFields {
 	file?: string;
 	bg?: string;
 	bgStyle?: string;
+	/** Linienabstand bzw. Kästchengröße (Doc-Einheiten); fehlt → Einstellungen. */
+	gap?: string;
 	text?: string;
 	[key: string]: string | undefined;
 }
@@ -81,6 +83,11 @@ function formatField(key: string, value: string): string[] {
 	}
 	const needsQuotes = /^[\s"'[{]|[#:]\s|\s$/.test(value);
 	return [`${key}: ${needsQuotes ? JSON.stringify(value) : value}`];
+}
+
+/** Mehrere Felder auf einmal (siehe `setField`). */
+export function setFields(src: string, fields: Record<string, string | undefined>): string {
+	return Object.entries(fields).reduce((out, [key, value]) => setField(out, key, value), src);
 }
 
 /** Setzt (oder entfernt bei `undefined`/leer) ein Feld; alle anderen Zeilen bleiben unverändert. */

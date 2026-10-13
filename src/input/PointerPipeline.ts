@@ -1,7 +1,7 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
-import { HL_SIZES, outlinePath, PEN_SIZES } from "../render/strokes";
+import { outlinePath } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
@@ -120,7 +120,7 @@ export class PointerPipeline {
 			pointerId: e.pointerId,
 			tool: hl ? "hl" : "pen",
 			color: hl ? tools.hlColor : tools.penColor,
-			size: hl ? HL_SIZES[tools.hlWidth] : PEN_SIZES[tools.penWidth],
+			size: hl ? settings.hlSizes[tools.hlWidth] : settings.penSizes[tools.penWidth],
 			simulated,
 			points: [x, y, simulated ? 0.5 : e.pressure],
 			hStart: this.entry.doc.h,

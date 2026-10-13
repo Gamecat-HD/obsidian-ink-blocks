@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBlock, setField } from "./source";
+import { parseBlock, setField, setFields } from "./source";
 import { findInkFences, locateInkFence, replaceFenceBody } from "./locate";
 
 const BODY = [
@@ -105,5 +105,8 @@ describe("findInkFences/locateInkFence", () => {
 		const lines = out.split("\n");
 		expect(lines.slice(11, 16)).toEqual(["~~~~ink", "file: _ink/b.ink", "text: |", "  neu", "~~~~"]);
 		expect(lines.length).toBe(NOTE.split("\n").length);
+	});
+	it("setFields setzt/entfernt mehrere Felder", () => {
+		expect(setFields("file: a.ink\nbgStyle: ruled\ngap: 30\n", { bgStyle: "grid", gap: undefined })).toBe("file: a.ink\nbgStyle: grid\n");
 	});
 });

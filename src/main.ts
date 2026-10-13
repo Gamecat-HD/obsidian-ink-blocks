@@ -1,11 +1,11 @@
-import { debounce, loadPdfJs, Plugin } from "obsidian";
+import { debounce, getIconIds, loadPdfJs, Plugin } from "obsidian";
 import { InkBlockChild } from "./block/InkBlockChild";
 import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
 import { OcrService } from "./ocr/OcrService";
 import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
-import { DEFAULT_SETTINGS, InkSettingTab, type InkSettings } from "./settings";
+import { InkSettingTab, normalizeSettings, type InkSettings } from "./settings";
 import { InkStore } from "./store/InkStore";
 
 export default class InkBlocksPlugin extends Plugin {
@@ -16,8 +16,15 @@ export default class InkBlocksPlugin extends Plugin {
 	/** Alle offenen Zeichenansichten (Blöcke und ausgeklappte Ansicht). */
 	readonly editors = new Set<InkEditor>();
 	/** Zugriff für die E2E-Tests (scripts/e2e). */
-	readonly dev: { loadPdfJs: typeof loadPdfJs; loaded: number; unloaded: number; rewriteUrl?: (url: string) => string } = {
+	readonly dev: {
+		loadPdfJs: typeof loadPdfJs;
+		getIconIds: typeof getIconIds;
+		loaded: number;
+		unloaded: number;
+		rewriteUrl?: (url: string) => string;
+	} = {
 		loadPdfJs,
+		getIconIds,
 		loaded: 0,
 		unloaded: 0,
 	};
@@ -48,8 +55,7 @@ export default class InkBlocksPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) ?? {};
-		this.settings = { ...DEFAULT_SETTINGS, ...data, tools: { ...DEFAULT_SETTINGS.tools, ...data.tools } };
+		this.settings = normalizeSettings(await this.loadData());
 	}
 
 	private readonly saveSoon = debounce(() => void this.saveSettings(), 800, true);

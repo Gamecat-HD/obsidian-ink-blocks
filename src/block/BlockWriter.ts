@@ -1,6 +1,6 @@
 import { MarkdownView, type App, type Editor } from "obsidian";
 import { locateInkFence, replaceFenceBody } from "./locate";
-import { parseBlock, setField } from "./source";
+import { parseBlock, setFields } from "./source";
 
 /**
  * Schreibt ein Feld eines ```ink-Blocks zurück in die Notiz.
@@ -16,8 +16,19 @@ export async function writeBlockField(
 	value: string | undefined,
 	hintLine?: number,
 ): Promise<boolean> {
+	return writeBlockFields(app, notePath, inkPath, { [key]: value }, hintLine);
+}
+
+/** Wie `writeBlockField`, aber mehrere Felder in einem Schritt (ein Re-Render, ein Undo-Schritt). */
+export async function writeBlockFields(
+	app: App,
+	notePath: string,
+	inkPath: string,
+	fields: Record<string, string | undefined>,
+	hintLine?: number,
+): Promise<boolean> {
 	const editor = openEditor(app, notePath);
-	if (editor) return writeViaEditor(editor, inkPath, key, value, hintLine);
+	if (editor) return writeViaEditor(editor, inkPath, fields, hintLine);
 
 	const file = app.vault.getFileByPath(notePath);
 	if (!file) return false;
@@ -25,7 +36,7 @@ export async function writeBlockField(
 	await app.vault.process(file, (data) => {
 		const found = locateInkFence(data, inkPath, hintLine);
 		if (!found) return data;
-		const body = setField(found.fence.body, key, value);
+		const body = setFields(found.fence.body, fields);
 		if (body === found.fence.body) return data;
 		changed = true;
 		return replaceFenceBody(data, found.fence, body);
@@ -41,11 +52,11 @@ function openEditor(app: App, notePath: string): Editor | null {
 	return null;
 }
 
-function writeViaEditor(editor: Editor, inkPath: string, key: string, value: string | undefined, hintLine?: number) {
+function writeViaEditor(editor: Editor, inkPath: string, fields: Record<string, string | undefined>, hintLine?: number) {
 	const found = locateInkFence(editor.getValue(), inkPath, hintLine);
 	if (!found) return false;
 	const { fence } = found;
-	const body = setField(fence.body, key, value);
+	const body = setFields(fence.body, fields);
 	if (body === fence.body) return false;
 	const from = { line: fence.open + 1, ch: 0 };
 	const to = { line: fence.close, ch: 0 };

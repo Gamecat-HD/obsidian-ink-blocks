@@ -122,16 +122,39 @@ export default async (h) => {
 	assert.doesNotMatch(s.text, /XYZ/, "Strg+Z im Editor hat den Text nicht rückgängig gemacht");
 	assert.equal(s.strokes, 3, "Strg+Z im Editor hat Tinte entfernt");
 
-	// 5. Hintergrund umschalten → bgStyle im Block, Re-Render; Undo funktioniert danach weiter
+	// 5. Hintergrund-Menü: Stil und Abstand → bgStyle/gap im Block, Re-Render; Undo funktioniert danach weiter
 	const loadedBefore = await h.evaluate((id) => app.plugins.plugins[id].dev.loaded, ID);
-	await clickBtn(".ink-tb-button[data-bg]");
-	await h.sleep(500);
+	const pickMenu = async (title) => {
+		await clickBtn(".ink-tb-button[data-bg]");
+		await h.sleep(250);
+		const p = await h.evaluate((title) => {
+			const item = [...document.querySelectorAll(".menu .menu-item")].find((i) => i.textContent.trim() === title);
+			if (!item) return [...document.querySelectorAll(".menu .menu-item")].map((i) => i.textContent.trim());
+			const r = item.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		}, title);
+		assert.ok(p.x !== undefined, `Menüpunkt ${title} fehlt: ${JSON.stringify(p)}`);
+		await h.click(p.x, p.y);
+		await h.sleep(500);
+	};
+	await pickMenu("Kariert");
 	s = await state();
 	assert.match(s.text, /```ink\nfile: [^\n]+\nbgStyle: grid\n```/);
 	assert.equal(s.bg, "grid");
 	assert.ok((await h.evaluate((id) => app.plugins.plugins[id].dev.loaded, ID)) > loadedBefore, "kein Re-Render");
+	await pickMenu("Kästchen: Groß");
+	s = await state();
+	assert.match(s.text, /bgStyle: grid\ngap: 35\n```/);
+	assert.equal(await h.evaluate(() => document.querySelector(".markdown-source-view .ink-surface").dataset.gap), "35");
+	assert.ok(await h.evaluate(() => !!document.querySelector(".markdown-source-view .ink-tb-button[data-bg] svg")), "Hintergrund-Icon fehlt");
+	await h.screenshot("m3-grid-gap.png");
+	await pickMenu("Liniert");
+	s = await state();
+	assert.match(s.text, /```ink\nfile: [^\n]+\nbgStyle: ruled\n```/, "Stilwechsel setzt gap nicht zurück");
+	await pickMenu("Kariert");
 	await clickBtn(".ink-tb-group:nth-child(4) .ink-tb-button:nth-child(1)");
 	assert.equal((await state()).strokes, 2, "Undo nach Re-Render");
+	assert.equal(await h.evaluate(() => document.querySelectorAll(".markdown-source-view .ink-tb-width").length), 3, "drei Breiten");
 
 	// 6. Auto-Grow: Strich über den unteren Rand hinaus
 	s = await state();

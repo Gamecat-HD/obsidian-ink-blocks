@@ -1,12 +1,8 @@
 import type { InkData } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
-import type { BgStyle } from "../settings";
+import type { Pattern } from "../model/pattern";
 import { HL_ALPHA, resolveColor, strokePath } from "./strokes";
 import { scaleFor, tileLayout, tilesForBounds, type Tile } from "./transform";
-
-/** Linienabstand liniert/kariert in Doc-Einheiten. */
-const RULED_GAP = 40;
-const GRID_GAP = 25;
 
 interface TileState {
 	tile: Tile;
@@ -53,7 +49,7 @@ export class Surface {
 	constructor(
 		parent: HTMLElement,
 		private doc: InkData,
-		private bgStyle: BgStyle,
+		private pattern: Pattern,
 	) {
 		this.el = parent.createDiv({ cls: "ink-surface" });
 		this.bgEl = this.el.createDiv({ cls: "ink-bg" });
@@ -85,8 +81,8 @@ export class Surface {
 		this.layout(true);
 	}
 
-	setBgStyle(style: BgStyle) {
-		this.bgStyle = style;
+	setPattern(pattern: Pattern) {
+		this.pattern = pattern;
 		this.applyPattern();
 	}
 
@@ -238,10 +234,10 @@ export class Surface {
 	}
 
 	private applyPattern() {
-		const style = this.doc.space === "page" ? "blank" : this.bgStyle;
+		const style = this.doc.space === "page" ? "blank" : this.pattern.style;
 		this.el.dataset.bg = style;
-		const gap = (style === "grid" ? GRID_GAP : RULED_GAP) * this.scale;
-		this.el.style.setProperty("--ink-gap", `${gap}px`);
+		this.el.dataset.gap = String(this.pattern.gap);
+		this.el.style.setProperty("--ink-gap", `${this.pattern.gap * this.scale}px`);
 	}
 
 	// ---- Live-Strich ----

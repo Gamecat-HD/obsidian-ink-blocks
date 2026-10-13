@@ -3,15 +3,13 @@ import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
 import type { OcrTarget } from "../ocr/OcrService";
 import { backgroundKind, measureBackground } from "../render/background";
-import type { BgStyle } from "../settings";
+import { patternFields, resolvePattern, type Pattern, type PatternChange } from "../model/pattern";
 import type { InkEntry, InkEvent } from "../store/InkStore";
 import { ExpandModal } from "../ui/ExpandModal";
 import { parseBgLink } from "./bgLink";
 import { InkEditor, type ResolvedBackground } from "./InkEditor";
-import { writeBlockField } from "./BlockWriter";
+import { writeBlockFields } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
-
-const BG_CYCLE: BgStyle[] = ["ruled", "grid", "blank"];
 
 /**
  * Ein gerenderter ```ink-Block. Der Zustand (Dokument, Undo) lebt im InkStore – Live Preview baut
@@ -86,9 +84,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 		if (!this.containerEl.contains(target)) this.containerEl.removeClass("is-active");
 	}
 
-	private get bgStyle(): BgStyle {
-		const style = this.fields.bgStyle;
-		return style === "ruled" || style === "grid" || style === "blank" ? style : this.plugin.settings.bgStyle;
+	private get pattern(): Pattern {
+		return resolvePattern(this.fields, this.plugin.settings);
 	}
 
 	private teardown() {
@@ -184,8 +181,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 		new ExpandModal({
 			plugin: this.plugin,
 			inkPath: path,
-			bgStyle: () => this.bgStyle,
-			cycleBg: () => this.cycleBg(),
+			pattern: () => this.pattern,
+			setPattern: (change) => this.setPattern(change),
 			background: this.resolveBackground(),
 			ocrTarget: () => this.ocrTarget(),
 		}).open();
@@ -220,16 +217,17 @@ export class InkBlockChild extends MarkdownRenderChild {
 		}
 	};
 
-	private cycleBg() {
+	private setPattern(change: PatternChange) {
 		const path = this.path;
 		if (!path) return;
-		const next = BG_CYCLE[(BG_CYCLE.indexOf(this.bgStyle) + 1) % BG_CYCLE.length];
+		const fields = patternFields(this.pattern, change);
+		if (!Object.keys(fields).length) return;
 		const hint = this.ctx.getSectionInfo(this.containerEl)?.lineStart;
 		// Live Preview rendert den Block danach neu; Dokument und Undo bleiben im Store.
-		this.fields.bgStyle = next;
+		Object.assign(this.fields, fields);
 		this.editor?.refresh();
 		this.releaseFocus();
-		void writeBlockField(this.plugin.app, this.ctx.sourcePath, path, "bgStyle", next, hint);
+		void writeBlockFields(this.plugin.app, this.ctx.sourcePath, path, fields, hint);
 	}
 
 	private render() {
@@ -246,8 +244,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.editor = new InkEditor(this.containerEl, {
 			plugin: this.plugin,
 			entry,
-			bgStyle: () => this.bgStyle,
-			cycleBg: () => this.cycleBg(),
+			pattern: () => this.pattern,
+			setPattern: (change) => this.setPattern(change),
 			background: entry.doc.space === "page" || !background || "error" in background ? background : null,
 			commit: () => this.commit(),
 			activate: this.activate,

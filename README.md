@@ -25,7 +25,8 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Finger scrollen (Einstellung „Nur Stift zeichnet“).
 - **Ausklappen** (Button ⤢ in der Leiste): öffnet dieselbe Fläche groß im Fenster, wie hineingezoomt. Ideal zum bequemen Schreiben und zum Ausfüllen von Arbeitsblättern. Esc oder ⤡ klappt wieder ein; alles landet sofort im Block.
 - **Eingebettete Bilder/PDFs:** Beim Überfahren erscheint „Beschriften“. Ein Klick macht daraus Arbeitsblatt-Flächen mit dem Bild bzw. der PDF-Seite als Hintergrund (bei PDFs Seite oder alle Seiten wählbar).
-- Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, 3 Farben, 2 Breiten, Rückgängig/Wiederholen und den Hintergrund (liniert, kariert, leer).
+- Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, Farben, 3 Breiten (fein/mittel/breit), Rückgängig/Wiederholen und das **Hintergrund-Menü**: liniert, kariert oder leer, dazu Linienabstand bzw. Kästchengröße nur für diese Fläche (Eng/Mittel/Weit bzw. Klein/Mittel/Groß, „Standard“ = aus den Einstellungen).
+- **Einstellungen:** Standard-Linienabstand und Kästchengröße sowie die drei Strichbreiten von Stift und Textmarker sind frei einstellbar. Breiten gelten für neue Striche.
 - **Strg+Z / Strg+Umschalt+Z / Strg+Y** wirken auf die Tinte, solange der Block aktiv ist, also nach dem Antippen. Ein Klick in den Text gibt die Tasten wieder an den Editor.
 - Der **erkannte Text** steht dezent unter der Fläche (Klick klappt ihn auf) und im Feld `text:` des Blocks. Darüber finden ihn die Obsidian-Suche, Omnisearch und die Lernplattform.
 
@@ -44,6 +45,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 file: _ink/2026-10-13-notiz-a1b2.ink
 bg: "[[Arbeitsblatt.pdf#page=2]]"
 bgStyle: grid
+gap: 18
 text: |
   erkannter Text
 ```

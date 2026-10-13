@@ -197,9 +197,14 @@
 	height: 5px;
 }
 
+.ink-tb-dot.is-medium {
+	width: 8px;
+	height: 8px;
+}
+
 .ink-tb-dot.is-bold {
-	width: 11px;
-	height: 11px;
+	width: 12px;
+	height: 12px;
 }
 
 /* ---- Arbeitsblätter ---- */
