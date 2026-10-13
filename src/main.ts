@@ -1,32 +1,35 @@
-import { MarkdownRenderChild, Plugin } from "obsidian";
-import { PenDiagnosticsModal } from "./diagnostics";
+import { loadPdfJs, Plugin } from "obsidian";
+import { InkBlockChild } from "./block/InkBlockChild";
+import { registerCommands } from "./commands";
+import { DEFAULT_SETTINGS, InkSettingTab, type InkSettings } from "./settings";
+import { InkStore } from "./store/InkStore";
 
 export default class InkBlocksPlugin extends Plugin {
+	declare settings: InkSettings;
+	store!: InkStore;
+	/** Zugriff für die E2E-Tests (scripts/e2e). */
+	readonly dev = { loadPdfJs, loaded: 0, unloaded: 0 };
+
 	async onload() {
+		await this.loadSettings();
+		this.store = new InkStore(this);
+
 		this.registerMarkdownCodeBlockProcessor("ink", (source, el, ctx) => {
-			ctx.addChild(new InkBlockStub(el, source));
+			ctx.addChild(new InkBlockChild(el, source, ctx, this));
 		});
-
-		this.addCommand({
-			id: "pen-diagnostics",
-			name: "Pen diagnostics",
-			callback: () => new PenDiagnosticsModal(this.app).open(),
-		});
-	}
-}
-
-/** Platzhalter, bis Phase 1 (Canvas + Sidecar) steht. Zeigt nur die Block-Parameter an. */
-class InkBlockStub extends MarkdownRenderChild {
-	constructor(containerEl: HTMLElement, private readonly source: string) {
-		super(containerEl);
+		registerCommands(this);
+		this.addSettingTab(new InkSettingTab(this));
 	}
 
-	onload() {
-		const box = this.containerEl.createDiv({ cls: "ink-block-stub" });
-		box.createEl("strong", { text: "ink block (todo)" });
-		for (const key of ["file", "bg"]) {
-			const value = new RegExp(`^${key}:\\s*(.+)$`, "m").exec(this.source)?.[1];
-			if (value) box.createDiv({ text: `${key}: ${value}` });
-		}
+	onunload() {
+		void this.store.flushAll();
+	}
+
+	async loadSettings() {
+		this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 }
