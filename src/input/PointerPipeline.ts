@@ -76,6 +76,9 @@ export class PointerPipeline {
 		el.addEventListener("pointermove", this.onMove);
 		el.addEventListener("pointerup", this.onUp);
 		el.addEventListener("pointercancel", this.onCancel);
+		// Capture verloren ohne pointerup (Fokuswechsel, Fenster verdeckt …): Geste abschließen statt sie
+		// hängen zu lassen – sonst würde der nächste Strich verworfen bzw. an den alten angehängt.
+		el.addEventListener("lostpointercapture", this.onUp);
 		// Editor (Live Preview) soll von Klicks in die Fläche nichts mitbekommen.
 		for (const type of ["mousedown", "click", "dblclick", "touchstart", "contextmenu"]) {
 			el.addEventListener(type, (e) => {
@@ -96,15 +99,22 @@ export class PointerPipeline {
 	}
 
 	private readonly onDown = (e: PointerEvent) => {
-		if (this.gesture) return;
 		const settings = this.plugin.settings;
 		const now = performance.now();
+		const current = this.gesture;
+		if (current) {
+			// Liegt der Handballen schon auf der Fläche (Scroll-Geste), hat der Stift Vorrang.
+			if (e.pointerType === "pen" && current.kind === "scroll") this.abortScroll(current);
+			// Gleicher Pointer ohne pointerup dazwischen: alte Geste ist verwaist.
+			else if (current.pointerId === e.pointerId) this.onUp(e);
+			else return;
+		}
 
 		if (e.pointerType === "touch") {
-			const palm = this.penDown || now < this.penUntil;
-			if (settings.penOnly || palm) {
-				if (!settings.penOnly) return;
-				this.capture(e);
+			// Handballen während bzw. kurz nach dem Schreiben: weder zeichnen noch scrollen.
+			if (this.penDown || now < this.penUntil) return;
+			if (settings.penOnly) {
+				this.capture(e, false);
 				this.gesture = { kind: "scroll", pointerId: e.pointerId, lastY: e.clientY, scroller: this.scroller() };
 				return;
 			}
@@ -195,7 +205,7 @@ export class PointerPipeline {
 
 	private readonly onUp = (e: PointerEvent) => {
 		const g = this.gesture;
-		if (e.pointerType === "pen") {
+		if (e.pointerType === "pen" && e.type !== "lostpointercapture") {
 			this.penDown = false;
 			this.penUntil = performance.now() + PALM_GRACE_MS;
 		}
@@ -248,14 +258,23 @@ export class PointerPipeline {
 		this.surface.el.parentElement?.toggleClass("is-drawing", on);
 	}
 
-	private capture(e: PointerEvent) {
+	private capture(e: PointerEvent, drawing = true) {
 		e.preventDefault();
 		e.stopPropagation();
-		this.setDrawing(true);
+		if (drawing) this.setDrawing(true);
 		try {
 			this.surface.el.setPointerCapture(e.pointerId);
 		} catch {
 			// Pointer nicht (mehr) aktiv – ohne Capture weiterzeichnen.
+		}
+	}
+
+	private abortScroll(g: Extract<Gesture, { kind: "scroll" }>) {
+		this.gesture = null;
+		try {
+			this.surface.el.releasePointerCapture(g.pointerId);
+		} catch {
+			// schon freigegeben
 		}
 	}
 

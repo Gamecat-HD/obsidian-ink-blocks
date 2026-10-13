@@ -70,5 +70,8 @@ export function patternFields(current: Pattern, change: PatternChange): Record<s
 		if (current.custom) out.gap = undefined;
 	}
 	if (change.gap !== undefined) out.gap = change.gap === null ? undefined : String(change.gap);
+	// Ein eigener Abstand gilt nur zusammen mit seinem Stil (sonst würde aus 55 Zeilenabstand nach einem
+	// Wechsel des Standardstils eine Kästchengröße).
+	if (typeof change.gap === "number") out.bgStyle = change.style ?? current.style;
 	return out;
 }

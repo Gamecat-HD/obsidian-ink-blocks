@@ -21,7 +21,8 @@ describe("Muster", () => {
 		expect(patternFields({ style: "ruled", gap: 40, custom: false }, { style: "ruled" })).toEqual({});
 	});
 	it("Abstand setzen bzw. auf Standard zurück", () => {
-		expect(patternFields({ style: "ruled", gap: 40, custom: false }, { gap: 55 })).toEqual({ gap: "55" });
+		// Eigener Abstand schreibt den Stil mit fest.
+		expect(patternFields({ style: "ruled", gap: 40, custom: false }, { gap: 55 })).toEqual({ gap: "55", bgStyle: "ruled" });
 		expect(patternFields({ style: "ruled", gap: 55, custom: true }, { gap: null })).toEqual({ gap: undefined });
 	});
 });

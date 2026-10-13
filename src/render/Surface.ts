@@ -37,6 +37,8 @@ export class Surface {
 	private readonly tilesEl: HTMLElement;
 	/** Zuletzt live gemalter Bereich – wird beim nächsten Frame bzw. Abbruch wieder sauber übermalt. */
 	private liveBounds: Bounds | null = null;
+	/** Der gerade entstehende Strich – wird bei jedem Neuzeichnen einer Kachel mitgemalt. */
+	private live: LiveStroke | null = null;
 	private tiles: TileState[] = [];
 	private scale = 1;
 	private cssWidth = 0;
@@ -131,6 +133,15 @@ export class Surface {
 				keep++;
 			}
 			if (keep === this.tiles.length && keep === wanted.length) return;
+			// Wachsen/Schrumpfen: die letzte Kachel an Ort und Stelle anpassen und sofort neu malen.
+			// Neu anlegen hieße: leer, bis der IntersectionObserver meldet – die Tinte blinkte weg.
+			const t = this.tiles[keep];
+			if (t && keep < wanted.length && t.tile.top === wanted[keep].top) {
+				t.tile = wanted[keep];
+				t.canvas.style.height = `${t.tile.height}px`;
+				if (t.visible) this.drawTile(t);
+				keep++;
+			}
 		}
 		for (const t of this.tiles.splice(keep)) {
 			this.io.unobserve(t.canvas);
@@ -140,8 +151,14 @@ export class Surface {
 			const canvas = this.tilesEl.createEl("canvas", { cls: "ink-tile" });
 			canvas.style.top = `${tile.top}px`;
 			canvas.style.height = `${tile.height}px`;
-			this.tiles.push({ tile, canvas, ctx: canvas.getContext("2d"), visible: false });
+			const t: TileState = { tile, canvas, ctx: canvas.getContext("2d"), visible: false };
+			this.tiles.push(t);
 			this.io.observe(canvas);
+			// Beim Wachsen während eines Strichs liegt die neue Kachel direkt unter dem Stift: gleich malen.
+			if (sameGeometry && this.live) {
+				t.visible = true;
+				this.drawTile(t);
+			}
 		}
 	}
 
@@ -164,6 +181,7 @@ export class Surface {
 			bounds = [...bounds, pad(this.liveBounds)];
 			this.liveBounds = null;
 		}
+		this.live = null;
 		const dirty = new Set<number>();
 		for (const b of bounds) for (const i of tilesForBounds(b, this.scale, this.tiles.map((t) => t.tile))) dirty.add(i);
 		for (const i of dirty) if (this.tiles[i]?.visible) this.drawTile(this.tiles[i]);
@@ -189,7 +207,7 @@ export class Surface {
 		const { dpr } = this;
 		t.canvas.width = Math.round(this.cssWidth * dpr);
 		t.canvas.height = Math.round(t.tile.height * dpr);
-		if (t.ctx) this.paint(t, null);
+		if (t.ctx) this.paint(t, null, this.live ?? undefined);
 	}
 
 	/**
@@ -246,11 +264,13 @@ export class Surface {
 	drawLive(live: LiveStroke) {
 		const dirty = this.liveBounds ? union(this.liveBounds, live.bounds) : live.bounds;
 		this.liveBounds = live.bounds;
+		this.live = live;
 		this.paintLive(pad(dirty), live);
 	}
 
 	/** Live-Strich wieder entfernen (Abbruch). Nach dem Absetzen übermalt `redraw` den Bereich ohnehin. */
 	clearLive() {
+		this.live = null;
 		if (!this.liveBounds) return;
 		const dirty = this.liveBounds;
 		this.liveBounds = null;

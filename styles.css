@@ -128,6 +128,10 @@
 	border-radius: var(--radius-l);
 	background: var(--background-secondary);
 	box-shadow: var(--shadow-s);
+	/* Schmale Flächen bzw. große Touch-Knöpfe: Leiste nicht links abschneiden, sondern quer scrollen. */
+	max-width: calc(100% - 52px);
+	overflow-x: auto;
+	scrollbar-width: none;
 	/* Ausblenden verzögert: man kann vom Block nach oben auf die Leiste wechseln. */
 	opacity: 0;
 	visibility: hidden;
@@ -408,4 +412,64 @@
 
 .is-mobile .ink-embed-annotate {
 	opacity: 1;
+}
+
+/* ---- Zeilenabstand/Kästchengröße einstellen (Popover am Hintergrund-Knopf) ---- */
+
+.ink-gap-popover {
+	position: fixed;
+	z-index: var(--layer-menu);
+	width: 260px;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	box-shadow: var(--shadow-s);
+}
+
+.ink-gap-title {
+	font-weight: var(--font-semibold);
+	margin-bottom: var(--size-4-2);
+}
+
+.ink-gap-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.ink-gap-slider {
+	flex: 1;
+}
+
+.ink-gap-step {
+	min-width: 32px;
+	padding: 0;
+}
+
+.ink-gap-value {
+	text-align: center;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	margin: var(--size-4-1) 0 var(--size-4-2);
+}
+
+.ink-gap-actions {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+}
+
+.ink-gap-actions button.is-active {
+	color: var(--text-accent);
+}
+
+.is-mobile .ink-gap-popover {
+	width: 320px;
+}
+
+.is-mobile .ink-gap-step,
+.is-mobile .ink-gap-actions button {
+	min-height: 40px;
+	min-width: 40px;
 }

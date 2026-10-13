@@ -46,6 +46,7 @@ export class InkEditor {
 			canRedo: () => entry.history.canRedo,
 			pattern: () => (entry.doc.space === "nb" ? host.pattern() : null),
 			setPattern: (change) => host.setPattern(change),
+			previewGap: (gap) => this.surface.setPattern(gap === null ? host.pattern() : { ...host.pattern(), gap, custom: true }),
 			toggleExpand: host.toggleExpand ? () => host.toggleExpand?.() : undefined,
 			expanded: !!host.expanded,
 		});
@@ -61,6 +62,11 @@ export class InkEditor {
 
 	get entry(): InkEntry {
 		return this.host.entry;
+	}
+
+	/** Gehört zur ausgeklappten Ansicht (nicht zu einem Block in der Notiz). */
+	get expanded(): boolean {
+		return !!this.host.expanded;
 	}
 
 	get busy(): boolean {

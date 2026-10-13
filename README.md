@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **v0.2.0**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich direkt auf den Kacheln, iPad-Modus, Linienabstand und Breiten je Fläche, Textmarker mit Lineal, Formerkennung (M9–M13). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus und simuliertem Stift; auf echter Stift-Hardware in Erprobung → [docs/HARDWARE.md](docs/HARDWARE.md).
+> Status: **v0.2.1**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich direkt auf den Kacheln, iPad-Modus, Linienabstand und Breiten je Fläche, Textmarker mit Lineal, Formerkennung (M9–M13). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus und simuliertem Stift; auf echter Stift-Hardware in Erprobung → [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ## Bedienung
 
@@ -25,7 +25,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Finger scrollen (Einstellung „Nur Stift zeichnet“).
 - **Ausklappen** (Button ⤢ in der Leiste): öffnet dieselbe Fläche groß im Fenster, wie hineingezoomt. Ideal zum bequemen Schreiben und zum Ausfüllen von Arbeitsblättern. Esc oder ⤡ klappt wieder ein; alles landet sofort im Block.
 - **Eingebettete Bilder/PDFs:** Beim Überfahren erscheint „Beschriften“. Ein Klick macht daraus Arbeitsblatt-Flächen mit dem Bild bzw. der PDF-Seite als Hintergrund (bei PDFs Seite oder alle Seiten wählbar).
-- Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, Farben, 3 Breiten (fein/mittel/breit), Rückgängig/Wiederholen und das **Hintergrund-Menü**: liniert, kariert oder leer, dazu Linienabstand bzw. Kästchengröße nur für diese Fläche (Eng/Mittel/Weit bzw. Klein/Mittel/Groß, „Standard“ = aus den Einstellungen).
+- Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, Farben, 3 Breiten (fein/mittel/breit), Rückgängig/Wiederholen und das **Hintergrund-Menü**: liniert, kariert oder leer, dazu Linienabstand bzw. Kästchengröße nur für diese Fläche (Eng/Mittel/Weit bzw. Klein/Mittel/Groß, „Standard“ = aus den Einstellungen). **„Zeilenabstand einstellen …“** öffnet einen Schieberegler direkt unter dem Knopf: Die Fläche zeigt den Abstand schon beim Ziehen, „Fertig“/Enter/Klick daneben speichert ihn im Block (`gap:`), Esc verwirft.
 - **Textmarker:** 6 Farben, 3 Breiten, liegt immer unter der Schrift (auch beim Zeichnen). Mit dem **Lineal** (Knopf in der Leiste, nur beim Textmarker; Standard: an) zieht er gerade Linien vom Ansatzpunkt zum Stift, nahe der Waagerechten exakt waagerecht. Auf Arbeitsblättern wirkt er wie ein echter Marker: Gedruckter Text darunter bleibt dunkel.
 - **Formen:** Linie, Rechteck, Dreieck oder Kreis/Ellipse zeichnen und den Stift am Ende kurz (½ s) ruhig halten. Daraus wird eine saubere Form (gerade Linien rasten waagerecht/senkrecht ein). Ohne Halten bleibt alles Freihand; abschaltbar in den Einstellungen. Formen landen nicht im erkannten Text.
 - **Einstellungen:** Standard-Linienabstand und Kästchengröße sowie die drei Strichbreiten von Stift und Textmarker sind frei einstellbar. Breiten gelten für neue Striche.
@@ -78,6 +78,8 @@ npm run e2e -- scripts/e2e/tests/*.mjs   # E2E in echtem Obsidian (s. u.)
 ### E2E-Tests
 
 `scripts/e2e/harness.mjs` startet eine **isolierte, headless** Obsidian-Instanz (eigener `XDG_CONFIG_HOME`, frische Kopie von `test-vault/`, Plugin aus dem Repo) und steuert sie per Chrome DevTools Protocol. Eine laufende Obsidian-Instanz bleibt unberührt. Voraussetzung: Arch-Paket `obsidian` (`electron43`, `/usr/lib/obsidian/app.asar`). Screenshots landen in `e2e-out/`; `--keep` behält den Test-Vault.
+
+**Echter Stift-Eingabeweg (Wayland):** `node scripts/e2e/pen/live-stroke.mjs` öffnet die Test-Instanz als Fenster auf Hyprland-Workspace 9 und schreibt mit einem virtuellen uinput-Stift (`scripts/e2e/pen/vpen.py`, braucht python-evdev und Schreibrecht auf `/dev/uinput`). `grim` fotografiert den Bildschirm mitten im Strich und nach dem Absetzen, zum Vergleich auch im Pen-Diagnose-Dialog. Optionen: `--palm dx,dy` legt zusätzlich einen Handballen (virtueller Touchscreen) auf, `--vault <Vorlage>` nimmt eine Vault-Kopie mit eigenem Theme und Plugins, `--plugin-from <dir>` testet einen anderen Build. Der Stift-Cursor bewegt sich dabei ca. 30 s auf dem echten Bildschirm.
 
 ## Netzwerk und Datenschutz
 

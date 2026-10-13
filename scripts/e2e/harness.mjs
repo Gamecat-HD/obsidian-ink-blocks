@@ -1,7 +1,7 @@
 // Startet eine isolierte, headless Obsidian-Instanz (eigener XDG_CONFIG_HOME, frischer Test-Vault)
 // und steuert sie per Chrome DevTools Protocol. Die laufende Obsidian-Instanz des Nutzers bleibt unberührt.
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, rm, symlink, writeFile, writeFile as wf } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile, writeFile as wf } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { createServer } from "node:net";
@@ -83,10 +83,11 @@ async function waitFor(fn, { timeout = 20000, interval = 200, what = "Bedingung"
 }
 
 /**
- * @param {{ vaultTemplate?: string, port?: number, width?: number, height?: number, dpr?: number, keep?: boolean }} opts
+ * @param {{ vaultTemplate?: string, port?: number, width?: number, height?: number, dpr?: number, keep?: boolean, ozone?: "headless" | "wayland" }} opts
+ *   `ozone: "wayland"` öffnet ein echtes Fenster (für Tests mit echter bzw. virtueller Stift-Eingabe, scripts/e2e/pen/).
  */
 export async function launch(opts = {}) {
-	const { width = 1280, height = 900, dpr = 1 } = opts;
+	const { width = 1280, height = 900, dpr = 1, ozone = "headless" } = opts;
 	const port = opts.port ?? (await freePort());
 	const root = await mkdtemp(join(tmpdir(), "ink-e2e-"));
 	const config = join(root, "config");
@@ -102,12 +103,15 @@ export async function launch(opts = {}) {
 	await cp(opts.vaultTemplate ?? join(REPO, "test-vault"), vault, { recursive: true });
 	const pluginDir = join(vault, ".obsidian/plugins", PLUGIN_ID);
 	await mkdir(pluginDir, { recursive: true });
-	for (const f of ["main.js", "manifest.json", "styles.css"]) await cp(join(REPO, f), join(pluginDir, f));
+	for (const f of ["main.js", "manifest.json", "styles.css"]) await cp(join(opts.pluginFrom ?? REPO, f), join(pluginDir, f));
 	// Modelle aus dem Repo verlinken (wie nach einem Download). `models: false` testet den Download selbst,
 	// `models: "copy"` erlaubt Tests, Modelldateien zu löschen/zu beschädigen, ohne das Repo anzufassen.
 	if (opts.models === "copy") await cp(join(REPO, "models"), join(pluginDir, "models"), { recursive: true });
 	else if (opts.models !== false && existsSync(join(REPO, "models"))) await symlink(join(REPO, "models"), join(pluginDir, "models"));
-	await writeFile(join(vault, ".obsidian/community-plugins.json"), JSON.stringify([PLUGIN_ID]));
+	// Plugins aus einer Vorlage (z. B. Kopie eines echten Vaults) bleiben aktiv.
+	const pluginList = join(vault, ".obsidian/community-plugins.json");
+	const enabled = existsSync(pluginList) ? JSON.parse(await readFile(pluginList, "utf8")) : [];
+	await writeFile(pluginList, JSON.stringify([...new Set([...enabled, PLUGIN_ID])]));
 	await wf(
 		join(config, "obsidian/obsidian.json"),
 		JSON.stringify({ vaults: { e2e0000000000001: { path: vault, ts: Date.now(), open: true } } }),
@@ -115,7 +119,7 @@ export async function launch(opts = {}) {
 
 	const proc = spawn(
 		"electron43",
-		["/usr/lib/obsidian/app.asar", `--remote-debugging-port=${port}`, "--ozone-platform=headless"],
+		["/usr/lib/obsidian/app.asar", `--remote-debugging-port=${port}`, `--ozone-platform=${ozone}`],
 		{ env: { ...process.env, XDG_CONFIG_HOME: config }, stdio: ["ignore", "pipe", "pipe"], detached: true },
 	);
 	const exited = new Promise((ok) => proc.on("exit", ok));
@@ -146,7 +150,8 @@ export async function launch(opts = {}) {
 	);
 	await cdp.send("Runtime.enable");
 	await cdp.send("Page.enable");
-	await cdp.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dpr, mobile: false });
+	// Ein echtes Fenster behält seine Größe und DPR (sonst stimmen Bildschirm- und Seitenkoordinaten nicht überein).
+	if (ozone === "headless") await cdp.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dpr, mobile: false });
 
 	const h = {
 		root,

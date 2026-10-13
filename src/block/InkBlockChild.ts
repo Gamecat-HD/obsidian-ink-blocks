@@ -75,10 +75,6 @@ export class InkBlockChild extends MarkdownRenderChild {
 		});
 	}
 
-	updateToolbar() {
-		this.editor?.toolbar.update();
-	}
-
 	/** Deaktiviert den Block, wenn `target` außerhalb liegt. */
 	deactivateUnless(target: Node) {
 		if (!this.containerEl.contains(target)) this.containerEl.removeClass("is-active");
@@ -176,7 +172,10 @@ export class InkBlockChild extends MarkdownRenderChild {
 	/** Große Schreibfläche im Dialog öffnen (gleiche Datei, Texterkennung zielt weiter auf diesen Block). */
 	private expand() {
 		const path = this.path;
-		if (!path || !this.entry) return;
+		// Ziel jetzt festhalten: Diese Instanz wird beim nächsten Neu-Rendern des Blocks (z. B. nach der
+		// Texterkennung) entladen, `ocrTarget()` liefert dann null. Das Ziel selbst bleibt gültig.
+		const target = this.ocrTarget();
+		if (!path || !this.entry || !target) return;
 		this.releaseFocus();
 		new ExpandModal({
 			plugin: this.plugin,
@@ -184,7 +183,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 			pattern: () => this.pattern,
 			setPattern: (change) => this.setPattern(change),
 			background: this.resolveBackground(),
-			ocrTarget: () => this.ocrTarget(),
+			ocrTarget: () => target,
 		}).open();
 	}
 

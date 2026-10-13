@@ -62,13 +62,15 @@ export default class InkBlocksPlugin extends Plugin {
 
 	/** Werkzeugzustand geändert (Toolbar): alle Leisten aktualisieren, gebündelt speichern. */
 	toolsChanged() {
-		for (const block of this.blocks) block.updateToolbar();
+		// Über alle Ansichten, auch die ausgeklappte (die gehört zu keinem Block).
+		for (const editor of this.editors) editor.toolbar.update();
 		this.saveSoon();
 	}
 
 	/** Alle sichtbaren Blöcke neu zeichnen (z. B. nach Theme- oder Einstellungswechsel). */
 	refreshBlocks() {
 		for (const block of this.blocks) block.refresh();
+		for (const editor of this.editors) if (editor.expanded) editor.refresh();
 	}
 
 	async saveSettings() {

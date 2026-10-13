@@ -1,8 +1,9 @@
 import { Menu, setIcon, setTooltip } from "obsidian";
 import type InkBlocksPlugin from "../main";
-import { GAP_PRESETS, type BgStyle, type Pattern, type PatternChange } from "../model/pattern";
+import { defaultGap, GAP_PRESETS, type BgStyle, type Pattern, type PatternChange } from "../model/pattern";
 import { HL_COLORS, PALETTE, PEN_COLORS } from "../render/strokes";
 import type { ToolId, WidthSlot } from "../settings";
+import { GapPopover } from "./GapPopover";
 
 export interface ToolbarActions {
 	undo(): void;
@@ -12,6 +13,8 @@ export interface ToolbarActions {
 	/** `null` = kein Hintergrund-Menü (Arbeitsblatt – dort ist „Tinte“ schwarz). */
 	pattern(): Pattern | null;
 	setPattern(change: PatternChange): void;
+	/** Abstand nur anzeigen, nicht speichern (Schieberegler); `null` = wieder wie im Block. */
+	previewGap(gap: number | null): void;
 	/** Ausklappen/Einklappen (fehlt → kein Button). */
 	toggleExpand?: () => void;
 	/** Leiste gehört zur ausgeklappten Ansicht. */
@@ -98,7 +101,7 @@ export class Toolbar {
 		const edit = this.group();
 		this.undoBtn = this.button(edit, "undo-2", "Rückgängig (Strg+Z)", () => actions.undo());
 		this.redoBtn = this.button(edit, "redo-2", "Wiederholen (Strg+Umschalt+Z)", () => actions.redo());
-		this.bgBtn = this.button(edit, "align-justify", "Hintergrund", () => this.showPatternMenu());
+		this.bgBtn = this.button(edit, "align-justify", "Hintergrund und Zeilenabstand", () => this.showPatternMenu());
 		if (actions.toggleExpand) {
 			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
 			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
@@ -142,7 +145,8 @@ export class Toolbar {
 		this.bgBtn.toggle(pattern !== null);
 		if (pattern) {
 			setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
-			setTooltip(this.bgBtn, `Hintergrund: ${BG_ICON[pattern.style].label.toLowerCase()}`);
+			const what = pattern.style === "grid" ? "Kästchengröße" : "Zeilenabstand";
+			setTooltip(this.bgBtn, `Hintergrund: ${BG_ICON[pattern.style].label.toLowerCase()}${pattern.style === "blank" ? "" : ` · ${what} ${pattern.gap}`}`);
 			this.bgBtn.dataset.bg = pattern.style;
 		}
 	}
@@ -196,6 +200,12 @@ export class Toolbar {
 		}
 		if (p.style !== "blank") {
 			menu.addSeparator();
+			menu.addItem((item) =>
+				item
+					.setTitle(p.style === "grid" ? `Kästchengröße einstellen … (${p.gap})` : `Zeilenabstand einstellen … (${p.gap})`)
+					.setIcon("sliders-horizontal")
+					.onClick(() => this.showGapPopover()),
+			);
 			const what = p.style === "grid" ? "Kästchen" : "Abstand";
 			for (const preset of GAP_PRESETS[p.style]) {
 				menu.addItem((item) =>
@@ -214,6 +224,18 @@ export class Toolbar {
 		}
 		const r = this.bgBtn.getBoundingClientRect();
 		menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
+	}
+
+	/** Schieberegler für den Abstand dieser Fläche (Vorschau live, gespeichert beim Schließen). */
+	private showGapPopover() {
+		const p = this.actions.pattern();
+		if (!p || p.style === "blank") return;
+		new GapPopover(this.bgBtn, {
+			pattern: p,
+			defaultGap: defaultGap(p.style, this.plugin.settings),
+			preview: (gap) => this.actions.previewGap(gap),
+			commit: (gap) => this.actions.setPattern({ gap }),
+		});
 	}
 
 	private setWidth(w: WidthSlot) {

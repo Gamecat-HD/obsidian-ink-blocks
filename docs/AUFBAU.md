@@ -238,3 +238,12 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
     - Dreieck oder Rechteck: Ecken per RDP, fast gerade Ecken fallen weg (auch ein Startpunkt mitten auf einer Kante), Rechteck mit 60–120°-Winkeln, achsparallel bei < 10°.
     - Sonst lockerer Ellipsen-Fallback.
   - Ergebnis: dichte Polylinie mit konstantem Druck, Flag `shape` (`sh:1`). Gerendert ohne Glättung (scharfe Ecken). Formen gehen nicht in die Texterkennung.
+
+### Nach v0.2.0 (M14)
+
+- **Live-Strich mit echtem Wayland-Stiftweg geprüft:** Ein virtueller uinput-Stift geht durch libinput, Hyprland und `tablet_v2` wie der echte. Damit malt schon v0.1 (8dbe5e4) im Block live, auch mit Theme, Plugins und Vim-Modus des echten Vaults und mit aufliegendem Handballen neben der Fläche. Der Fehler „Strich erst nach dem Absetzen“ hängt also an etwas, das nur das echte Gerät hat; M9 malt jetzt wie der Diagnose-Dialog; mit v0.2.1 bestätigt der Nutzer auf dem echten Gerät, dass der Strich live erscheint.
+- **Handballen auf der Fläche (Bug, mit virtuellem Touchscreen reproduziert):** Lag die Hand vor dem Stift auf der Fläche, startete sie bei „Nur Stift zeichnet“ eine Scroll-Geste; der Stift wurde dann ignoriert und der Strich ging verloren. Jetzt bricht der Stift eine Touch-Geste ab, Berührungen während bzw. kurz nach dem Schreiben werden ganz ignoriert (kein Scrollen). Dazu `lostpointercapture` wie `pointerup`, eine verwaiste Geste desselben Pointers wird beim nächsten Aufsetzen abgeschlossen.
+- **Wachsen ohne Blinken:** Die unterste Kachel wird an Ort und Stelle vergrößert und sofort neu gemalt (vorher neu angelegt und bis zum IntersectionObserver leer). Der Live-Strich wird bei jedem Neuzeichnen einer Kachel mitgemalt.
+- **Ausgeklappte Ansicht:** Werkzeugwechsel aktualisiert auch ihre Leiste (`toolsChanged` über `plugin.editors`); das Texterkennungs-Ziel wird beim Ausklappen festgehalten (vorher `null`, sobald der Block in der Notiz neu gerendert war).
+- **Zeilenabstand-Regler (`ui/GapPopover.ts`):** Popover statt Dialog, damit die Fläche sichtbar bleibt. Vorschau über `Surface.setPattern`, gespeichert wird erst beim Schließen. Ein eigener `gap:` schreibt `bgStyle:` mit fest.
+- **Leiste im iPad-Modus:** `max-width` + Querscrollen statt links abgeschnitten (Textmarker-Modus hat 17 Knöpfe à 40 px).
