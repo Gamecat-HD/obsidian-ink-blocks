@@ -17,6 +17,8 @@ export interface Stroke {
 	/** Strichbreite in Doc-Einheiten. */
 	size: number;
 	points: number[];
+	/** Kein echter Druck (Maus/Finger) – perfect-freehand simuliert ihn aus der Geschwindigkeit. */
+	simulated?: boolean;
 }
 
 export interface InkBackground {
@@ -97,15 +99,18 @@ interface StoredStroke {
 	c: number;
 	s: number;
 	p: number[];
+	sp?: 1;
 }
 
 export function encodeInk(doc: InkData): string {
 	const head: Record<string, unknown> = { v: doc.v, id: doc.id, space: doc.space, w: doc.w, h: doc.h, q: Q };
 	if (doc.bg) head.bg = doc.bg;
 	if (doc.ocr) head.ocr = doc.ocr;
-	const strokes = doc.strokes.map((s) =>
-		JSON.stringify({ id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) } satisfies StoredStroke),
-	);
+	const strokes = doc.strokes.map((s) => {
+		const stored: StoredStroke = { id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) };
+		if (s.simulated) stored.sp = 1;
+		return JSON.stringify(stored);
+	});
 	const headJson = JSON.stringify(head).slice(0, -1);
 	return `${headJson},"strokes":[${strokes.length ? `\n${strokes.join(",\n")}\n` : ""}]}\n`;
 }
@@ -133,7 +138,9 @@ export function decodeInk(text: string): InkData {
 		if (!Array.isArray(s.p) || s.p.length % 3 !== 0 || !s.p.every(isNum)) {
 			throw new InkFormatError(`Punkte von Strich ${i} ungültig`);
 		}
-		return { id: s.id, tool: s.t, color: s.c, size: s.s, points: decodePoints(s.p, q) } satisfies Stroke;
+		const stroke: Stroke = { id: s.id, tool: s.t, color: s.c, size: s.s, points: decodePoints(s.p, q) };
+		if (s.sp) stroke.simulated = true;
+		return stroke;
 	});
 
 	const doc: InkData = { v: 1, id: raw.id, space: raw.space, w: raw.w, h: raw.h, strokes };

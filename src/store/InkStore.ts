@@ -3,7 +3,7 @@ import type InkBlocksPlugin from "../main";
 import { decodeInk, encodeInk, type InkData } from "../model/ink-format";
 import { mergeInk } from "../model/merge";
 
-export type InkEvent = "reloaded" | "deleted";
+export type InkEvent = "reloaded" | "deleted" | "changed";
 export type InkListener = (event: InkEvent) => void;
 
 /** Geteilter Zustand einer .ink-Datei. Alle Blöcke, die dieselbe Datei zeigen, arbeiten auf demselben Eintrag. */
@@ -68,6 +68,13 @@ export class InkStore {
 		if (!e) return;
 		e.dirty = true;
 		e.save();
+	}
+
+	/** Andere Blöcke derselben Datei über eine lokale Änderung informieren. */
+	changed(entry: InkEntry, source: InkListener) {
+		const e = this.entries.get(entry.path);
+		if (!e) return;
+		for (const fn of [...e.listeners]) if (fn !== source) fn("changed");
 	}
 
 	async flushAll() {

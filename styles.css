@@ -4,12 +4,48 @@
 }
 
 .ink-surface {
+	--ink-gap: 28px;
+	--ink-line: var(--background-modifier-border);
 	position: relative;
 	width: 100%;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
-	background: var(--background-primary);
+	background-color: var(--background-primary);
 	overflow: hidden;
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	cursor: crosshair;
+}
+
+.ink-surface[data-bg="ruled"] {
+	background-image: linear-gradient(to bottom, transparent calc(var(--ink-gap) - 1px), var(--ink-line) calc(var(--ink-gap) - 1px));
+	background-size: 100% var(--ink-gap);
+}
+
+.ink-surface[data-bg="grid"] {
+	background-image:
+		linear-gradient(to bottom, transparent calc(var(--ink-gap) - 1px), var(--ink-line) calc(var(--ink-gap) - 1px)),
+		linear-gradient(to right, transparent calc(var(--ink-gap) - 1px), var(--ink-line) calc(var(--ink-gap) - 1px));
+	background-size: var(--ink-gap) var(--ink-gap);
+}
+
+.ink-tiles,
+.ink-tile,
+.ink-live {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	pointer-events: none;
+}
+
+.ink-tiles {
+	top: 0;
+	height: 100%;
+}
+
+.ink-live {
+	display: none;
 }
 
 .ink-message {

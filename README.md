@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **M1 fertig** (Block einfügen, `.ink`-Speicher, Reload/Umbenennen/Löschen/LiveSync-Merge). Gezeichnet werden kann ab M2. Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
+> Status: **M2 fertig**: Schreibfläche einfügen und darin mit Stift (Druck), Maus, Textmarker und Radierer schreiben. Werkzeugleiste, Undo und automatisches Mitwachsen folgen mit M3. Plan: [docs/AUFBAU.md](docs/AUFBAU.md).
 
 ## Dokumentation
 

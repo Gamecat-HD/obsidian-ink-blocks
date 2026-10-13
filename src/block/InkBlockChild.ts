@@ -1,6 +1,10 @@
 import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, type TAbstractFile } from "obsidian";
+import { PointerPipeline } from "../input/PointerPipeline";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
+import type { InkOp } from "../model/ops";
+import { Surface } from "../render/Surface";
+import type { BgStyle } from "../settings";
 import type { InkEntry, InkEvent } from "../store/InkStore";
 import { parseBlock, type BlockFields } from "./source";
 
@@ -10,6 +14,8 @@ import { parseBlock, type BlockFields } from "./source";
  */
 export class InkBlockChild extends MarkdownRenderChild {
 	private entry: InkEntry | null = null;
+	private surface: Surface | null = null;
+	private pipeline: PointerPipeline | null = null;
 	private fields: BlockFields;
 	private alive = false;
 
@@ -29,6 +35,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 
 	onload() {
 		this.alive = true;
+		this.plugin.blocks.add(this);
 		this.plugin.dev.loaded++;
 		this.containerEl.addClass("ink-block");
 		this.containerEl.dataset.instance = String(this.plugin.dev.loaded);
@@ -37,13 +44,29 @@ export class InkBlockChild extends MarkdownRenderChild {
 
 	onunload() {
 		this.alive = false;
+		this.plugin.blocks.delete(this);
 		this.plugin.dev.unloaded++;
-		this.detach();
-	}
-
-	private detach() {
+		this.teardown();
 		if (this.entry) this.plugin.store.release(this.entry, this.onStoreEvent);
 		this.entry = null;
+	}
+
+	/** Nach Theme- oder Einstellungswechsel neu zeichnen. */
+	refresh() {
+		this.surface?.setBgStyle(this.bgStyle);
+		this.surface?.redrawAll();
+	}
+
+	private get bgStyle(): BgStyle {
+		const style = this.fields.bgStyle;
+		return style === "ruled" || style === "grid" || style === "blank" ? style : this.plugin.settings.bgStyle;
+	}
+
+	private teardown() {
+		this.pipeline?.destroy();
+		this.surface?.destroy();
+		this.pipeline = null;
+		this.surface = null;
 	}
 
 	private async mount() {
@@ -81,26 +104,35 @@ export class InkBlockChild extends MarkdownRenderChild {
 
 	private readonly onStoreEvent = (event: InkEvent) => {
 		if (event === "deleted") {
+			this.teardown();
 			this.entry = null;
 			void this.mount();
-		} else {
-			this.render();
+		} else if (this.entry) {
+			// Neu geladen (Sync) oder von einem anderen Block derselben Datei geändert.
+			this.surface?.setDoc(this.entry.doc);
 		}
+	};
+
+	private readonly onOp = (_op: InkOp) => {
+		const entry = this.entry;
+		if (!entry) return;
+		this.plugin.store.touch(entry);
+		this.plugin.store.changed(entry, this.onStoreEvent);
 	};
 
 	private render() {
 		const entry = this.entry;
 		if (!entry) return;
-		const { doc } = entry;
+		this.teardown();
 		this.containerEl.empty();
 		this.containerEl.removeClass("is-message");
-		const surface = this.containerEl.createDiv({ cls: "ink-surface" });
-		surface.style.aspectRatio = `${doc.w} / ${doc.h}`;
-		surface.dataset.path = entry.path;
-		surface.dataset.strokes = String(doc.strokes.length);
+		this.surface = new Surface(this.containerEl, entry.doc, this.bgStyle);
+		this.surface.el.dataset.path = entry.path;
+		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp);
 	}
 
 	private showMessage(title: string, detail?: string) {
+		this.teardown();
 		this.containerEl.empty();
 		this.containerEl.addClass("is-message");
 		const box = this.containerEl.createDiv({ cls: "ink-message" });

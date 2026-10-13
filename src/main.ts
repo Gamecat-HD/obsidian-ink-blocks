@@ -7,6 +7,7 @@ import { InkStore } from "./store/InkStore";
 export default class InkBlocksPlugin extends Plugin {
 	declare settings: InkSettings;
 	store!: InkStore;
+	readonly blocks = new Set<InkBlockChild>();
 	/** Zugriff für die E2E-Tests (scripts/e2e). */
 	readonly dev = { loadPdfJs, loaded: 0, unloaded: 0 };
 
@@ -18,6 +19,7 @@ export default class InkBlocksPlugin extends Plugin {
 			ctx.addChild(new InkBlockChild(el, source, ctx, this));
 		});
 		registerCommands(this);
+		this.registerEvent(this.app.workspace.on("css-change", () => this.refreshBlocks()));
 		this.addSettingTab(new InkSettingTab(this));
 	}
 
@@ -26,7 +28,13 @@ export default class InkBlocksPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData()) };
+		const data = (await this.loadData()) ?? {};
+		this.settings = { ...DEFAULT_SETTINGS, ...data, tools: { ...DEFAULT_SETTINGS.tools, ...data.tools } };
+	}
+
+	/** Alle sichtbaren Blöcke neu zeichnen (z. B. nach Theme- oder Einstellungswechsel). */
+	refreshBlocks() {
+		for (const block of this.blocks) block.refresh();
 	}
 
 	async saveSettings() {
