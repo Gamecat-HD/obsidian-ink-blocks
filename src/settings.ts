@@ -34,6 +34,8 @@ export interface InkSettings {
 	ocrDelay: number;
 	/** „auto“ = de-htr-web-v2 → v1 → Tesseract.js, je nachdem was geladen ist und funktioniert. */
 	ocrEngine: "auto" | EngineId;
+	/** Erkannten Text dezent unter dem Block anzeigen. */
+	showText: boolean;
 }
 
 export const DEFAULT_SETTINGS: InkSettings = {
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	ocrEnabled: true,
 	ocrDelay: 10,
 	ocrEngine: "auto",
+	showText: true,
 };
 
 export class InkSettingTab extends PluginSettingTab {
@@ -95,6 +98,7 @@ export class InkSettingTab extends PluginSettingTab {
 			"Erkennt die Handschrift lokal auf diesem Gerät und schreibt sie ins text:-Feld des Blocks – durchsuchbar in Obsidian und anderen Tools, die den Vault lesen.",
 			"ocrEnabled",
 		);
+		this.toggle("Erkannten Text anzeigen", "Zeigt den erkannten Text klein unter der Schreibfläche (Klick klappt ihn auf).", "showText", () => this.plugin.refreshBlocks());
 		new Setting(containerEl)
 			.setName("Wartezeit nach dem Schreiben")
 			.setDesc("Sekunden Ruhe nach dem letzten Strich, bevor erkannt wird.")
@@ -155,7 +159,12 @@ export class InkSettingTab extends PluginSettingTab {
 		});
 	}
 
-	private toggle(name: string, desc: string, key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled") {
+	private toggle(
+		name: string,
+		desc: string,
+		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText",
+		after?: () => void,
+	) {
 		new Setting(this.containerEl)
 			.setName(name)
 			.setDesc(desc)
@@ -163,6 +172,7 @@ export class InkSettingTab extends PluginSettingTab {
 				t.setValue(this.plugin.settings[key]).onChange(async (value) => {
 					this.plugin.settings[key] = value;
 					await this.plugin.saveSettings();
+					after?.();
 				}),
 			);
 	}

@@ -1,13 +1,17 @@
 import { normalizePath, Notice, type Editor, type MarkdownFileInfo, type MarkdownView, type TFile } from "obsidian";
 import { formatBgLink } from "./block/bgLink";
 import { findInkFences } from "./block/locate";
-import { setField } from "./block/source";
+import { parseBlock, setField } from "./block/source";
 import type InkBlocksPlugin from "./main";
 import { PenDiagnosticsModal } from "./diagnostics";
 import { createNotebook, createPage } from "./model/ink-format";
 import { backgroundKind, measureBackground, openPdf } from "./render/background";
 import { WorksheetFileModal, WorksheetPageModal } from "./ui/WorksheetModal";
+import { benchmarkNote, benchmarkReport, parseBenchmark, upsertReport } from "./ocr/benchmark";
 import { ENGINES } from "./ocr/models";
+import { rasterizeSegment } from "./ocr/raster";
+import { referenceHeight, segmentLines } from "./ocr/segment";
+import { OrphanModal } from "./ui/OrphanModal";
 import { inkFileName, shortId } from "./util/ids";
 
 export function registerCommands(plugin: InkBlocksPlugin) {
@@ -49,6 +53,34 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 				notice.setMessage(`Download fehlgeschlagen: ${(e as Error).message}`);
 			}
 			window.setTimeout(() => notice.hide(), 4000);
+		},
+	});
+
+	plugin.addCommand({
+		id: "find-orphans",
+		name: "Verwaiste Ink-Dateien finden",
+		callback: async () => new OrphanModal(plugin.app, await findOrphans(plugin)).open(),
+	});
+
+	plugin.addCommand({
+		id: "benchmark-create",
+		name: "OCR-Messung: Notiz mit 30 Testsätzen anlegen",
+		callback: () => void createBenchmark(plugin),
+	});
+
+	plugin.addCommand({
+		id: "benchmark-evaluate",
+		name: "OCR-Messung auswerten",
+		editorCallback: (editor, ctx) => {
+			if (ctx.file) void evaluateBenchmark(plugin, editor, ctx.file);
+		},
+	});
+
+	plugin.addCommand({
+		id: "ocr-debug",
+		name: "OCR-Debug: Segmentbilder dieser Notiz speichern",
+		editorCallback: (editor, ctx) => {
+			if (ctx.file) void saveSegmentImages(plugin, ctx.file, editor.getValue());
 		},
 	});
 
@@ -139,7 +171,7 @@ export async function insertWorksheet(
 }
 
 /** Alle ink-Blöcke einer Notiz sofort erkennen (überschreibt auch bearbeiteten Text). */
-async function recognizeNote(plugin: InkBlocksPlugin, notePath: string, text: string) {
+async function recognizeNote(plugin: InkBlocksPlugin, notePath: string, text: string, quiet = false): Promise<boolean> {
 	const fences = findInkFences(text).filter((f) => f.file);
 	let written = 0;
 	for (const fence of fences) {
@@ -153,10 +185,106 @@ async function recognizeNote(plugin: InkBlocksPlugin, notePath: string, text: st
 				true,
 			);
 			if (outcome === "written") written++;
-			else if (outcome === "no-models") return;
+			else if (outcome === "no-models") return false;
 		} finally {
 			plugin.store.release(entry, listener);
 		}
 	}
-	new Notice(`Handschrift erkannt: ${fences.length} Block/Blöcke, ${written} aktualisiert.`);
+	if (!quiet) new Notice(`Handschrift erkannt: ${fences.length} Block/Blöcke, ${written} aktualisiert.`);
+	return true;
+}
+
+/** .ink-Dateien, die in keinem ink-Block einer Notiz vorkommen. */
+export async function findOrphans(plugin: InkBlocksPlugin): Promise<TFile[]> {
+	const { vault } = plugin.app;
+	const used = new Set<string>();
+	for (const note of vault.getMarkdownFiles()) {
+		const text = await vault.cachedRead(note);
+		if (!text.includes("ink")) continue;
+		for (const fence of findInkFences(text)) if (fence.file) used.add(normalizePath(fence.file));
+	}
+	return vault.getFiles().filter((f) => f.extension === "ink" && !used.has(f.path));
+}
+
+async function createBenchmark(plugin: InkBlocksPlugin) {
+	const date = new Date().toISOString().slice(0, 10);
+	let notePath = `Ink OCR-Messung ${date}.md`;
+	for (let i = 2; plugin.app.vault.getAbstractFileByPath(notePath); i++) notePath = `Ink OCR-Messung ${date} (${i}).md`;
+	const paths: string[] = [];
+	for (let i = 0; i < 30; i++) {
+		const { path, id } = freeInkPath(plugin, `ocr-messung ${i + 1}`);
+		await plugin.store.create(path, createNotebook(id, 220));
+		paths.push(path);
+	}
+	const file = await plugin.app.vault.create(notePath, benchmarkNote(paths, date));
+	await plugin.app.workspace.getLeaf(true).openFile(file);
+}
+
+async function evaluateBenchmark(plugin: InkBlocksPlugin, editor: Editor, note: TFile) {
+	if (!(await recognizeNote(plugin, note.path, editor.getValue(), true))) return;
+	const text = editor.getValue();
+	const fences = findInkFences(text);
+	const items = parseBenchmark(text, fences);
+	if (!items.length) {
+		new Notice("Keine OCR-Messung in dieser Notiz gefunden.");
+		return;
+	}
+	const rows = items.map((item) => ({
+		n: item.n,
+		prompt: item.prompt,
+		recognized: parseBlock(fences.find((f) => f.open === item.line)?.body ?? "").text?.trim() ?? "",
+	}));
+	const engines = new Set<string>();
+	const listener = () => {};
+	for (const item of items) {
+		const entry = await plugin.store.acquire(item.inkPath, listener).catch(() => null);
+		if (!entry) continue;
+		if (entry.doc.ocr && entry.doc.strokes.length) engines.add(entry.doc.ocr.engine);
+		plugin.store.release(entry, listener);
+	}
+	const report = benchmarkReport(rows, [...engines].join(", ") || "–", new Date().toLocaleString());
+	const updated = upsertReport(text, report);
+	// Nur den geänderten Bereich ersetzen (Undo-fähig, Cursor bleibt)
+	let start = 0;
+	while (start < text.length && text[start] === updated[start]) start++;
+	editor.replaceRange(updated.slice(start), editor.offsetToPos(start), editor.offsetToPos(text.length));
+	new Notice("OCR-Messung ausgewertet – Ergebnis am Ende der Notiz.");
+}
+
+/**
+ * Speichert für jeden ink-Block die Segmentbilder (so wie das Modell sie sieht) und den erkannten Text
+ * nach `<Ordner>/_debug/` und legt eine Übersichtsnotiz an – zum Nachvollziehen von Erkennungsfehlern.
+ */
+async function saveSegmentImages(plugin: InkBlocksPlugin, note: TFile, text: string) {
+	const { vault } = plugin.app;
+	const dir = normalizePath(`${plugin.settings.folder}/_debug`);
+	if (!vault.getFolderByPath(dir)) await vault.createFolder(dir);
+	const md = [`# OCR-Debug: ${note.basename}`, ""];
+	const listener = () => {};
+	for (const fence of findInkFences(text)) {
+		if (!fence.file) continue;
+		const entry = await plugin.store.acquire(normalizePath(fence.file), listener).catch(() => null);
+		if (!entry) continue;
+		const pen = entry.doc.strokes.filter((s) => s.tool === "pen");
+		const refHeight = referenceHeight(pen);
+		md.push(`## ${fence.file}`, "", `Referenzhöhe: ${refHeight.toFixed(1)} · Engine: ${entry.doc.ocr?.engine ?? "–"}`, "");
+		let n = 0;
+		for (const [li, line] of segmentLines(entry.doc.strokes).entries()) {
+			for (const seg of line) {
+				const { canvas } = rasterizeSegment({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight }, 64, 1024);
+				const png = await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer();
+				const name = `${entry.doc.id}-${++n}.png`;
+				const path = `${dir}/${name}`;
+				const existing = vault.getFileByPath(path);
+				if (existing) await vault.modifyBinary(existing, png);
+				else await vault.createBinary(path, png);
+				md.push(`Zeile ${li + 1}: \`${entry.doc.ocr?.lines[seg.key] ?? "?"}\``, "", `![[${path}]]`, "");
+			}
+		}
+		plugin.store.release(entry, listener);
+	}
+	const target = `${dir}/OCR-Debug ${note.basename}.md`;
+	const file = vault.getFileByPath(target);
+	if (file) await vault.modify(file, md.join("\n"));
+	await plugin.app.workspace.getLeaf(true).openFile(file ?? (await vault.create(target, md.join("\n"))));
 }

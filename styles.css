@@ -105,16 +105,25 @@
 	border-color: var(--interactive-accent);
 }
 
+/*
+ * Die Leiste sitzt in einem reservierten Streifen über der Fläche, nicht auf ihr – sonst landen Striche,
+ * die unter ihr beginnen, auf der Leiste. (Außerhalb des Blocks geht nicht: Obsidians Codeblock-Widget
+ * hat `contain: paint`.) Bei langen Blöcken klebt sie beim Scrollen oben und blendet beim Schreiben aus.
+ */
+.ink-block:has(> .ink-toolbar-anchor) {
+	padding-top: 40px;
+}
+
 .ink-toolbar-anchor {
 	position: sticky;
-	top: var(--size-4-2);
+	top: 40px;
 	height: 0;
 	z-index: 5;
 }
 
 .ink-toolbar {
 	position: absolute;
-	top: var(--size-4-2);
+	top: -38px;
 	/* Platz lassen für Obsidians „Block bearbeiten“-Button (</>) oben rechts in Live Preview. */
 	right: 44px;
 	display: flex;
@@ -124,15 +133,17 @@
 	border-radius: var(--radius-l);
 	background: var(--background-secondary);
 	box-shadow: var(--shadow-s);
+	/* Ausblenden verzögert: man kann vom Block nach oben auf die Leiste wechseln. */
 	opacity: 0;
-	pointer-events: none;
-	transition: opacity 120ms ease;
+	visibility: hidden;
+	transition: opacity 120ms ease 400ms, visibility 0s linear 520ms;
 }
 
 .ink-block:hover .ink-toolbar,
 .ink-block.is-active .ink-toolbar {
 	opacity: 1;
-	pointer-events: auto;
+	visibility: visible;
+	transition-delay: 0s;
 }
 
 .ink-tb-group {
@@ -228,4 +239,52 @@
 	color: var(--text-on-accent);
 	font-size: var(--font-smaller);
 	pointer-events: none;
+}
+
+/* ---- Erkannter Text, Zeichnen ---- */
+
+.ink-block.is-drawing .ink-toolbar {
+	opacity: 0.12;
+	pointer-events: none;
+	transition: opacity 60ms ease;
+}
+
+.ink-caption {
+	margin-top: var(--size-2-2);
+	padding: 0 var(--size-2-3);
+	color: var(--text-faint);
+	font-size: var(--font-smallest);
+	line-height: 1.4;
+	white-space: pre-wrap;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	cursor: pointer;
+}
+
+.ink-caption::before {
+	content: "Erkannt: ";
+	font-weight: var(--font-semibold);
+}
+
+.ink-caption.is-expanded {
+	display: block;
+	color: var(--text-muted);
+}
+
+/* ---- Verwaiste Dateien ---- */
+
+.ink-orphan-list {
+	max-height: 40vh;
+	overflow-y: auto;
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+}
+
+.ink-orphan-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+	margin-top: var(--size-4-3);
 }

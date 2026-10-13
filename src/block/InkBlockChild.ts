@@ -67,6 +67,21 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.surface?.setBgStyle(this.bgStyle);
 		this.surface?.redrawAll();
 		this.toolbar?.update();
+		if (this.surface) this.renderCaption();
+	}
+
+	/** Erkannter Text (aus `text:`) dezent unter der Fläche; Klick klappt auf/zu. */
+	private renderCaption() {
+		this.containerEl.querySelector(":scope > .ink-caption")?.remove();
+		const text = this.fields.text?.trim();
+		if (!text || !this.plugin.settings.showText) return;
+		const caption = this.containerEl.createDiv({ cls: "ink-caption", attr: { "aria-label": "Erkannter Text" } });
+		caption.setText(text);
+		for (const type of ["pointerdown", "mousedown", "touchstart"]) caption.addEventListener(type, (e) => e.stopPropagation());
+		caption.addEventListener("click", (e) => {
+			e.stopPropagation();
+			caption.toggleClass("is-expanded", !caption.hasClass("is-expanded"));
+		});
 	}
 
 	updateToolbar() {
@@ -263,6 +278,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 		this.surface.el.dataset.path = entry.path;
 		this.surface.el.tabIndex = -1;
 		this.pipeline = new PointerPipeline(this.plugin, entry, this.surface, this.onOp, this.activate);
+		this.renderCaption();
 		this.setupBackground(entry);
 		if (entry.reactivate) {
 			entry.reactivate = false;

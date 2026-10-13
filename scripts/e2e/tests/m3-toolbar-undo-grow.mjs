@@ -36,7 +36,10 @@ export default async (h) => {
 			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 		}, sel);
 	const clickBtn = async (sel) => {
-		// Erst hovern: ausgeblendete Leiste hat pointer-events: none.
+		// Wie ein Nutzer: erst über die Fläche, dann hoch auf die Leiste (die über der Oberkante schwebt).
+		const surf = await h.evaluate(() => { const r = document.querySelector(".markdown-source-view .ink-surface").getBoundingClientRect(); return { x: r.x + r.width - 60, y: r.y + 20 }; });
+		await h.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: surf.x, y: surf.y });
+		await h.sleep(150);
 		const p = await btn(sel);
 		await h.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
 		await h.sleep(200);
@@ -58,7 +61,13 @@ export default async (h) => {
 	});
 	assert.equal(tb.opacity, "1", "Leiste beim Hovern unsichtbar");
 	assert.equal(tb.missingIcons, 0, "Icons fehlen");
-	// Keine Überdeckung mit Obsidians „Block bearbeiten“-Button
+	// Leiste liegt über der Oberkante, nicht auf der Schreibfläche; keine Überdeckung mit „Block bearbeiten“
+	const above = await h.evaluate(() => {
+		const bar = document.querySelector(".markdown-source-view .ink-toolbar").getBoundingClientRect();
+		const surf = document.querySelector(".markdown-source-view .ink-surface").getBoundingClientRect();
+		return bar.bottom <= surf.top + 1;
+	});
+	assert.ok(above, "Leiste überdeckt die Schreibfläche");
 	const overlap = await h.evaluate(() => {
 		const edit = document.querySelector(".markdown-source-view .edit-block-button")?.getBoundingClientRect();
 		const bar = document.querySelector(".markdown-source-view .ink-toolbar").getBoundingClientRect();

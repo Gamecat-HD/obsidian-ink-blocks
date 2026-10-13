@@ -49,6 +49,14 @@ Am besten mit einem CachyOS-Live-USB direkt auf dem Gerät.
 | Move-Rate | ≥ 120 Hz |
 | Radierer (32) | ja (sonst Radierer nur über Werkzeugwahl) |
 
+## Erkennungsqualität mit der eigenen Handschrift
+
+1. Befehl **„OCR-Messung: Notiz mit 30 Testsätzen anlegen“**
+2. Jeden Satz mit dem Stift in die Fläche darunter schreiben, so wie man normal schreibt. Teilmengen reichen auch.
+3. Befehl **„OCR-Messung auswerten“**: Am Ende der Notiz erscheint eine Tabelle mit erkanntem Text und Zeichenfehlerrate (CER) pro Zeile sowie gesamt.
+4. Bei auffälligen Zeilen: **„OCR-Debug: Segmentbilder dieser Notiz speichern“**. Das zeigt, wie das Modell die Zeilen sieht (Zerlegung, Strichstärke, Größe).
+5. Gesamt-CER und Auffälligkeiten unten eintragen. Zum Vergleich: In den Benchmarks des Modells liegt de-htr-web-v2 bei ca. 8 % CER.
+
 ## Ergebnisse
 
 <!-- Pen-Reports hier einfügen: Gerät, Kernel, Wayland/X11 -->

@@ -74,6 +74,7 @@ export class PointerPipeline {
 	destroy() {
 		cancelAnimationFrame(this.frame);
 		this.gesture = null;
+		this.setDrawing(false);
 	}
 
 	get active() {
@@ -166,6 +167,7 @@ export class PointerPipeline {
 		}
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
+		this.setDrawing(false);
 		cancelAnimationFrame(this.frame);
 
 		if (g.kind === "draw") {
@@ -187,6 +189,7 @@ export class PointerPipeline {
 		const g = this.gesture;
 		if (!g || g.pointerId !== e.pointerId) return;
 		this.gesture = null;
+		this.setDrawing(false);
 		cancelAnimationFrame(this.frame);
 		if (g.kind === "draw") {
 			this.surface.endLive();
@@ -208,9 +211,15 @@ export class PointerPipeline {
 		this.surface.beginLive();
 	}
 
+	/** Während eines Strichs blendet die Werkzeugleiste aus (CSS `.is-drawing`). */
+	private setDrawing(on: boolean) {
+		this.surface.el.parentElement?.toggleClass("is-drawing", on);
+	}
+
 	private capture(e: PointerEvent) {
 		e.preventDefault();
 		e.stopPropagation();
+		this.setDrawing(true);
 		try {
 			this.surface.el.setPointerCapture(e.pointerId);
 		} catch {

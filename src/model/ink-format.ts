@@ -54,8 +54,8 @@ const Q = 10;
 
 export class InkFormatError extends Error {}
 
-export function createNotebook(id: string): InkData {
-	return { v: 1, id, space: "nb", w: NB_WIDTH, h: NB_MIN_HEIGHT, strokes: [] };
+export function createNotebook(id: string, h = NB_MIN_HEIGHT): InkData {
+	return { v: 1, id, space: "nb", w: NB_WIDTH, h, strokes: [] };
 }
 
 /** Arbeitsblatt: Koordinaten in nativen Einheiten des Hintergrunds (PDF-Punkte bzw. Bildpixel). */
