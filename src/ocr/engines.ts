@@ -1,5 +1,5 @@
 import type { HtrConfig } from "./preprocess";
-import type { RecognizedSegment, WorkerSegment } from "./protocol";
+import type { DecoderSetup, RecognizedSegment, WorkerSegment } from "./protocol";
 import { ORT_WASM, TESSERACT, type EngineId, type HtrSpec, type ModelStore } from "./models";
 import { rasterizeSegment } from "./raster";
 import { OcrWorker } from "./workerClient";
@@ -24,18 +24,23 @@ function once<T>(fn: () => Promise<T>): () => Promise<T> {
 	};
 }
 
-/** de-htr-web (v1/v2) über onnxruntime-web im eigenen Worker. */
+/** Liefert den Dekoder; `gen` ändert sich, wenn er neu an den Worker gehen muss (z. B. Vault geändert). */
+export type DecoderSource = () => Promise<{ gen: number; setup: DecoderSetup }>;
+
+/** de-htr-web (v1/v2) über onnxruntime-web im eigenen Worker; mit `decoder` Beam-Search + Vault-LM statt Greedy. */
 export class HtrEngine implements Engine {
 	readonly id: EngineId;
 	readonly version: string;
 	private worker: OcrWorker | null = null;
+	private decoderGen: number | null = null;
 
 	constructor(
 		private readonly spec: HtrSpec,
 		private readonly models: ModelStore,
+		private readonly decoder: DecoderSource | null = null,
 	) {
 		this.id = spec.id;
-		this.version = `${spec.id}@${spec.model.sha256.slice(0, 8)}`;
+		this.version = `${spec.id}@${spec.model.sha256.slice(0, 8)}${decoder ? "+lm" : ""}`;
 	}
 
 	private readonly load = once(async () => {
@@ -57,12 +62,20 @@ export class HtrEngine implements Engine {
 
 	async recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
 		await this.load();
+		if (this.decoder) {
+			const { gen, setup } = await this.decoder();
+			if (gen !== this.decoderGen) {
+				await this.worker!.setDecoder(setup);
+				this.decoderGen = gen;
+			}
+		}
 		return this.worker!.recognize(segments);
 	}
 
 	dispose() {
 		this.worker?.terminate();
 		this.worker = null;
+		this.decoderGen = null;
 	}
 }
 

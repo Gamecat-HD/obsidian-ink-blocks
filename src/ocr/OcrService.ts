@@ -3,7 +3,9 @@ import { readBlockField, writeBlockField } from "../block/BlockWriter";
 import type InkBlocksPlugin from "../main";
 import type { InkEntry } from "../store/InkStore";
 import { fnv1a } from "../util/hash";
-import { HtrEngine, TesseractEngine, type Engine } from "./engines";
+import { BENCHMARK_TITLE } from "./benchmark";
+import { markdownToCorpus } from "./corpus";
+import { HtrEngine, TesseractEngine, type DecoderSource, type Engine } from "./engines";
 import { ENGINE_ORDER, ENGINES, HTR_V1, HTR_V2, ModelStore, type EngineId } from "./models";
 import { referenceHeight, segmentLines } from "./segment";
 
@@ -25,6 +27,18 @@ export type OcrOutcome = "written" | "unchanged" | "user-edited" | "disabled" | 
 const RETRY_BUSY_MS = 2000;
 
 /**
+ * Beam-Search-Parameter, gemessen auf 1168 ScaDS-Zeilen unbekannter Schreiber (scripts/bench/):
+ * α/β auf Val gewählt; Test-CER 8,1 % → 7,0 % schon mit dem fachfremden Vault-LM.
+ */
+const DECODER = { order: 6, alpha: 0.35, beta: 1.5, beamWidth: 16, grammar: true };
+/** Höchstens so viel Vault-Text fließt ins LM (neueste Notizen zuerst). */
+const MAX_CORPUS_CHARS = 4_000_000;
+/** Fachbegriffe zählen so oft wie ebenso viele Vorkommen im Vault. */
+const HOTWORD_WEIGHT = 20;
+/** Nach Vault-Änderungen wird das LM frühestens nach dieser Zeit neu gebaut. */
+const CORPUS_REFRESH_MS = 10 * 60 * 1000;
+
+/**
  * Handschrift → Text, lokal. Erkennt nach einer Ruhepause nur geänderte Segmente (Cache pro Segment im
  * .ink), setzt den Text zusammen und schreibt ihn ins `text:`-Feld – nur wenn er sich geändert hat und
  * der Nutzer ihn nicht selbst bearbeitet hat.
@@ -38,6 +52,8 @@ export class OcrService {
 	private readonly timers = new Map<string, number>();
 	private readonly running = new Map<string, Promise<OcrOutcome>>();
 	private warnedMissing = false;
+	private corpus: { lines: string[]; at: number; gen: number } | null = null;
+	private corpusStale = false;
 
 	constructor(private readonly plugin: InkBlocksPlugin) {
 		this.models = new ModelStore(plugin);
@@ -56,6 +72,47 @@ export class OcrService {
 		this.failed.clear();
 		this.lastEngine = null;
 		this.warnedMissing = false;
+	}
+
+	/** Vault-Text hat sich geändert: das LM bei Gelegenheit neu bauen. */
+	markCorpusStale() {
+		this.corpusStale = true;
+	}
+
+	/** LM sofort neu bauen (z. B. nach Änderung der Fachbegriffe). */
+	invalidateCorpus() {
+		this.corpusStale = true;
+		if (this.corpus) this.corpus.at = 0;
+	}
+
+	private readonly decoder: DecoderSource = async () => {
+		let c = this.corpus;
+		if (!c || (this.corpusStale && Date.now() - c.at > CORPUS_REFRESH_MS)) {
+			this.corpusStale = false;
+			c = this.corpus = { lines: await this.collectCorpus(), at: Date.now(), gen: (c?.gen ?? 0) + 1 };
+		}
+		return { gen: c.gen, setup: { lines: c.lines, ...DECODER } };
+	};
+
+	/** Klartext aller Notizen (neueste zuerst, gedeckelt) plus Fachbegriffe aus den Einstellungen. */
+	private async collectCorpus(): Promise<string[]> {
+		const { vault } = this.plugin.app;
+		const files = vault.getMarkdownFiles().sort((a, b) => b.stat.mtime - a.stat.mtime);
+		const lines: string[] = [];
+		let size = 0;
+		for (const file of files) {
+			if (size >= MAX_CORPUS_CHARS) break;
+			const md = await vault.cachedRead(file);
+			// Die OCR-Messnotiz enthält die Vorgabesätze – im LM würde sie die Messung verfälschen.
+			if (md.startsWith(BENCHMARK_TITLE)) continue;
+			for (const line of markdownToCorpus(md)) {
+				lines.push(line);
+				size += line.length;
+			}
+		}
+		const hotwords = this.plugin.settings.ocrHotwords.split(/[\n,;]/).map((w) => w.trim()).filter(Boolean);
+		for (let i = 0; i < HOTWORD_WEIGHT; i++) lines.push(...hotwords);
+		return lines;
 	}
 
 	/** Engines, deren Dateien vollständig vorliegen. */
@@ -102,7 +159,8 @@ export class OcrService {
 	private create(id: EngineId): Engine {
 		let engine = this.engines.get(id);
 		if (!engine) {
-			engine = id === "tesseract" ? new TesseractEngine(this.models) : new HtrEngine(id === "htr-v2" ? HTR_V2 : HTR_V1, this.models);
+			const decoder = this.plugin.settings.ocrLanguageModel ? this.decoder : null;
+			engine = id === "tesseract" ? new TesseractEngine(this.models) : new HtrEngine(id === "htr-v2" ? HTR_V2 : HTR_V1, this.models, decoder);
 			this.engines.set(id, engine);
 		}
 		return engine;

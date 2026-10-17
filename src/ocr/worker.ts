@@ -3,10 +3,12 @@
  * OffscreenCanvas und erkennt sie mit onnxruntime-web (Wasm, ein Thread).
  */
 import * as ort from "onnxruntime-web/wasm";
+import { ctcBeamSearch, type BeamOptions } from "./beam";
 import { ctcGreedy } from "./ctc";
+import { buildCharLm } from "./lm";
 import { toTensor, type HtrConfig } from "./preprocess";
 import { rasterizeSegment } from "./raster";
-import type { WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
+import type { DecoderSetup, WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
 
 interface WorkerScope {
 	onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
@@ -16,6 +18,17 @@ const scope = self as unknown as WorkerScope;
 
 let session: ort.InferenceSession | null = null;
 let config: HtrConfig | null = null;
+/** null = Greedy */
+let beam: BeamOptions | null = null;
+
+function setupDecoder(setup: DecoderSetup | null, cfg: HtrConfig) {
+	if (!setup) {
+		beam = null;
+		return;
+	}
+	const lm = setup.lines?.length ? buildCharLm(setup.lines, cfg.alphabet, { order: setup.order }) : null;
+	beam = { lm, alpha: setup.alpha, beta: lm ? setup.beta : 0, beamWidth: setup.beamWidth, grammar: setup.grammar };
+}
 
 function rasterize(seg: WorkerSegment, cfg: HtrConfig) {
 	const { ctx, t } = rasterizeSegment(seg, cfg.image_height, cfg.max_width);
@@ -34,10 +47,9 @@ async function recognize(segments: WorkerSegment[]) {
 		const input = new ort.Tensor("float32", tensor, [1, channels, cfg.image_height, width]);
 		const out = await session.run({ [cfg.input_name]: input });
 		const logits = out[cfg.output_name];
-		const r = ctcGreedy(logits.data as Float32Array, logits.dims, cfg.alphabet, {
-			blank: cfg.blank_index,
-			validSteps: Math.ceil(contentWidth / cfg.output_stride),
-		});
+		const opts = { blank: cfg.blank_index, validSteps: Math.ceil(contentWidth / cfg.output_stride) };
+		const data = logits.data as Float32Array;
+		const r = beam ? ctcBeamSearch(data, logits.dims, cfg.alphabet, { ...beam, ...opts }) : ctcGreedy(data, logits.dims, cfg.alphabet, opts);
 		results.push({ ...r, ms: performance.now() - t0 });
 	}
 	return results;
@@ -51,6 +63,10 @@ scope.onmessage = async ({ data }) => {
 			ort.env.wasm.proxy = false;
 			session = await ort.InferenceSession.create(new Uint8Array(data.model), { executionProviders: ["wasm"] });
 			config = data.config;
+			scope.postMessage({ id: data.id, ok: true, result: null });
+		} else if (data.type === "decoder") {
+			if (!config) throw new Error("Worker nicht initialisiert");
+			setupDecoder(data.setup, config);
 			scope.postMessage({ id: data.id, ok: true, result: null });
 		} else {
 			scope.postMessage({ id: data.id, ok: true, result: await recognize(data.segments) });

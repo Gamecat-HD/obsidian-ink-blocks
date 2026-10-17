@@ -38,6 +38,8 @@ export const BENCHMARK_PROMPTS = [
 ];
 
 export const REPORT_HEADING = "## Ergebnis";
+/** Anfang jeder Messnotiz – solche Notizen bleiben aus dem Sprachmodell draußen. */
+export const BENCHMARK_TITLE = "# OCR-Messung";
 
 /** Levenshtein-Distanz auf Codepoints. */
 export function editDistance(a: string, b: string): number {
@@ -65,7 +67,7 @@ export function cer(reference: string, hypothesis: string): number {
 /** Inhalt der Messnotiz (Blöcke werden mit ihren .ink-Pfaden eingesetzt). */
 export function benchmarkNote(inkPaths: string[], date: string): string {
 	const parts = [
-		`# OCR-Messung ${date}`,
+		`${BENCHMARK_TITLE} ${date}`,
 		"",
 		"Schreibe jeden Satz **so wie du normal schreibst** in die Fläche darunter. Danach den Befehl",
 		"„Ink Blocks: OCR-Messung auswerten“ ausführen – das Ergebnis erscheint unten.",

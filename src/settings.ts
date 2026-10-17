@@ -92,6 +92,25 @@ export class InkSettingTab extends PluginSettingTab {
 						this.plugin.ocr.reset();
 					}),
 			);
+		this.toggle(
+			"Sprachmodell aus dem Vault",
+			"Liest unsichere Buchstaben im Kontext deiner Notizen (Zeichen-Sprachmodell, lokal im Erkennungs-Worker) und prüft IP-Adressen auf gültige Zeichen. Gilt für de-htr-web.",
+			"ocrLanguageModel",
+			() => this.plugin.ocr.reset(),
+		);
+		new Setting(containerEl)
+			.setName("Fachbegriffe")
+			.setDesc("Wörter, die oft vorkommen, aber selten richtig erkannt werden – eins pro Zeile oder mit Komma getrennt. Sie zählen im Sprachmodell stärker.")
+			.addTextArea((ta) =>
+				ta
+					.setPlaceholder("Subnetzmaske\nVermittlungsschicht\nPrimärschlüssel")
+					.setValue(this.plugin.settings.ocrHotwords)
+					.onChange(async (v) => {
+						this.plugin.settings.ocrHotwords = v;
+						await this.plugin.saveSettings();
+						this.plugin.ocr.invalidateCorpus();
+					}),
+			);
 		for (const id of ENGINE_ORDER) this.modelSetting(containerEl, id);
 	}
 
@@ -166,7 +185,7 @@ export class InkSettingTab extends PluginSettingTab {
 	private toggle(
 		name: string,
 		desc: string,
-		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "showText" | "hlStraight" | "shapeRecognition",
+		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "ocrLanguageModel" | "showText" | "hlStraight" | "shapeRecognition",
 		after?: () => void,
 	) {
 		new Setting(this.containerEl)

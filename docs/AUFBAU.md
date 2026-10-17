@@ -247,3 +247,22 @@ Neue Dependencies: `onnxruntime-web@1.30.0` (exakt), `tesseract.js@7`, dev: `vit
 - **Ausgeklappte Ansicht:** Werkzeugwechsel aktualisiert auch ihre Leiste (`toolsChanged` über `plugin.editors`); das Texterkennungs-Ziel wird beim Ausklappen festgehalten (vorher `null`, sobald der Block in der Notiz neu gerendert war).
 - **Zeilenabstand-Regler (`ui/GapPopover.ts`):** Popover statt Dialog, damit die Fläche sichtbar bleibt. Vorschau über `Surface.setPattern`, gespeichert wird erst beim Schließen. Ein eigener `gap:` schreibt `bgStyle:` mit fest.
 - **Leiste im iPad-Modus:** `max-width` + Querscrollen statt links abgeschnitten (Textmarker-Modus hat 17 Knöpfe à 40 px).
+
+### v0.3.0 (M15): Beam-Search mit Vault-Sprachmodell
+
+Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OPTIONEN-2026-10.md): Es gibt kein besseres kleines Modell, der größte Hebel ist der Decoder.
+
+- **`ocr/lm.ts`:** Zeichen-n-Gramm-LM, Ordnung 6, mit Witten-Bell-Interpolation.
+  - n-Gramme sind als Zahlen kodiert (Alphabet-Code + 1, Basis = Alphabetgröße + 1).
+  - Seltene n-Gramme ab Ordnung 3 (Anzahl < 2) werden verworfen.
+- **`ocr/corpus.ts`:** Markdown → Klartext.
+  - Entfernt werden ink-Blöcke (die OCR-Texte würden sonst Fehler verstärken), Frontmatter, Link-Ziele und Syntax. Code bleibt erhalten.
+  - Die OCR-Messnotiz bleibt draußen.
+- **`ocr/beam.ts`:** CTC-Prefix-Beam-Search (Breite 16) mit Shallow Fusion α·log P_lm + β je Zeichen.
+  - Grammatik für IPv4/IPv6/CIDR: Innerhalb einer Adresse entscheidet ein Zeichensatz statt des LM, fremde Zeichen werden bestraft.
+- **Einbindung:**
+  - `OcrService` sammelt den Vault-Text (neueste Notizen zuerst, max. 4 M Zeichen) plus die Einstellung „Fachbegriffe“ (20-fach gewichtet).
+  - Der Worker baut daraus das LM (Nachricht `decoder`).
+  - Vault-Änderungen markieren das LM als veraltet; es wird frühestens nach 10 min neu gebaut.
+  - Die Engine-Version bekommt `+lm`, damit beim Umschalten der Zeilen-Cache neu erkannt wird. Ein neu gebautes LM verwirft den Cache nicht.
+- **Messung** (`scripts/bench/`): `dump_logits.py` berechnet die v2-Logits der ScaDS-Zeilen im v1-Split von naeyn (Val 567 / Test 601, unbekannte Schreiber). `npm run bench:decoder` vergleicht die Decoder. α/β werden auf Val gewählt, berichtet wird auf Test.

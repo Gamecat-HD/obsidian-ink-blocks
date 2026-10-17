@@ -44,6 +44,10 @@ export interface InkSettings {
 	ocrDelay: number;
 	/** „auto“ = de-htr-web-v2 → v1 → Tesseract.js, je nachdem was geladen ist und funktioniert. */
 	ocrEngine: "auto" | EngineId;
+	/** Beam-Search mit Zeichen-Sprachmodell aus dem Vault statt Greedy (nur de-htr-web). */
+	ocrLanguageModel: boolean;
+	/** Zusätzliche Fachbegriffe für das Sprachmodell (Zeilen, Komma oder Semikolon getrennt). */
+	ocrHotwords: string;
 	/** Erkannten Text dezent unter dem Block anzeigen. */
 	showText: boolean;
 }
@@ -64,6 +68,8 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	ocrEnabled: true,
 	ocrDelay: 10,
 	ocrEngine: "auto",
+	ocrLanguageModel: true,
+	ocrHotwords: "",
 	showText: true,
 };
 
@@ -98,5 +104,6 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	settings.hlSizes = sizes(raw.hlSizes, d.hlSizes, LIMITS.hlSize);
 	settings.tools.penWidth = slot(settings.tools.penWidth);
 	settings.tools.hlWidth = slot(settings.tools.hlWidth);
+	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
 	return settings;
 }

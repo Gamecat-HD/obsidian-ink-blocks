@@ -122,3 +122,25 @@ text: |
 | Tesseract | „Hallo Welt / Netz / Maske“ |
 
 Tesseract kommt mit dieser sehr gleichmäßigen Druckschrift gut zurecht. Bei echter Handschrift ist es laut Benchmark deutlich schwächer (CER ca. 43 %).
+
+## Beam-Search mit Vault-Sprachmodell (M15)
+
+Statt greedy dekodiert der Worker per CTC-Prefix-Beam-Search mit einem Zeichen-6-Gramm aus dem eigenen Vault. Dazu kommt eine Grammatik für IP-Adressen. Einstellung: „Sprachmodell aus dem Vault“, Standard an; dazu optional „Fachbegriffe“. Aufbau siehe [AUFBAU.md](AUFBAU.md#v030-m15-beam-search-mit-vault-sprachmodell).
+
+**Gemessen auf echter Handschrift:** ScaDS.AI-Zeilen unbekannter Schreiber (Split von naeyn/de-htr-web), v2 int8. α/β wurden auf 567 Val-Zeilen gewählt (Ergebnis α = 0,35, β = 1,5). Die Werte gelten für die 601 Test-Zeilen:
+
+| Decoder | LM-Text | CER | WER |
+|---|---|---:|---:|
+| greedy (bisher) | – | 8,14 % | 33,1 % |
+| Beam, ohne LM | – | 8,11 % | 32,9 % |
+| Beam + LM | eigener Vault (0,8 M Zeichen, IT-Notizen, **fachfremd**) | **6,97 %** | **27,1 %** |
+| Beam + LM | ScaDS-Train-Sätze (0,2 M Zeichen, gleiche Textsorte wie der Test) | 6,73 % | 25,7 % |
+| Beam + LM | Vault + ScaDS-Train (α = 0,5, β = 2,5) | 6,46 % | 24,4 % |
+
+- Die Testsätze sind Wikipedia-Text, das LM aus den Berufsschul-Notizen passt also nicht zum Thema. Trotzdem sinkt die CER um 14 % relativ. Auf eigenen Notizen, wo LM und Text zusammenpassen, sollte der Gewinn größer sein.
+- Ordnung 7 bringt gegenüber 6 nichts mehr. Je besser das LM zum Text passt, desto höher fallen α/β aus. Deshalb sollten α/β später auf den eigenen Korrekturen nachjustiert werden.
+- Dauer: ca. 4 ms pro Zeile für die Dekodierung (Node). Das LM-Bauen kostet ca. 0,7 s pro 0,8 M Zeichen, einmal pro Sitzung bzw. nach Vault-Änderungen.
+
+**E2E** (`m15-decoder`, synthetische Striche aus EMSReadability/EMSAllure, LM aus einer Fachnotiz im Test-Vault): CER 9,9 % → 7,3 %. Beispiele: „Der Roliterleitet Pakete Weiter.“ → „Der Roliter leitet Pakete weiter.“; „Schicht B ist de …“ → „… ist die …“.
+
+**Offen:** Die Messung auf eigener Stiftschrift (OCR-Messnotiz) muss auf dem HP-Gerät laufen. Danach kommen Render-Tuning (Strichstärke/Kernhöhe), Wort-Konfidenz und PP-OCRv6 statt Tesseract.js.

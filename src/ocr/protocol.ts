@@ -14,8 +14,19 @@ export interface RecognizedSegment {
 	ms: number;
 }
 
+/** Dekodierung im Worker: Beam-Search mit Zeichen-LM aus `lines` (null = kein LM). */
+export interface DecoderSetup {
+	lines: string[] | null;
+	order: number;
+	alpha: number;
+	beta: number;
+	beamWidth: number;
+	grammar: boolean;
+}
+
 export type WorkerRequest =
 	| { id: number; type: "init"; wasm: ArrayBuffer; model: ArrayBuffer; config: HtrConfig }
+	| { id: number; type: "decoder"; setup: DecoderSetup | null }
 	| { id: number; type: "recognize"; segments: WorkerSegment[] };
 
 export type WorkerResponse =

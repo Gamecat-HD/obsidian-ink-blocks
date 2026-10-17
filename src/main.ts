@@ -1,4 +1,4 @@
-import { debounce, getIconIds, loadPdfJs, Plugin } from "obsidian";
+import { debounce, getIconIds, loadPdfJs, Plugin, TFile, type TAbstractFile } from "obsidian";
 import { InkBlockChild } from "./block/InkBlockChild";
 import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
@@ -41,6 +41,12 @@ export default class InkBlocksPlugin extends Plugin {
 		new EmbedAnnotator(this);
 		registerTabletMode(this);
 		this.registerEvent(this.app.workspace.on("css-change", () => this.refreshBlocks()));
+		// Notizen geändert → Sprachmodell der Texterkennung bei Gelegenheit neu bauen
+		const notesChanged = (f: TAbstractFile) => f instanceof TFile && f.extension === "md" && this.ocr.markCorpusStale();
+		this.registerEvent(this.app.vault.on("create", notesChanged));
+		this.registerEvent(this.app.vault.on("modify", notesChanged));
+		this.registerEvent(this.app.vault.on("delete", notesChanged));
+		this.registerEvent(this.app.vault.on("rename", notesChanged));
 		// Klick außerhalb des aktiven Blocks deaktiviert ihn (Strg+Z gehört dann wieder dem Editor).
 		this.registerDomEvent(document, "pointerdown", (e) => {
 			for (const block of this.blocks) block.deactivateUnless(e.target as Node);

@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ink-blocks",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"private": true,
 	"description": "Obsidian-Plugin: Handschrift-Blöcke in Notizen, PDF-Arbeitsblätter, lokale Texterkennung",
 	"main": "main.js",
@@ -10,6 +10,7 @@
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"test": "vitest run",
 		"e2e": "node scripts/e2e/run.mjs",
+		"bench:decoder": "node scripts/bench/run.mjs",
 		"fetch-models": "node scripts/fetch-models.mjs"
 	},
 	"license": "UNLICENSED",
