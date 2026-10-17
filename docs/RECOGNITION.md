@@ -21,6 +21,8 @@ In den Settings steht „Auto“ für die Reihenfolge v2 → v1 → Tesseract.js
 - Das Modell ist neu (08/2026) und teils mit Handschrift-Fonts trainiert. Die Qualität auf echter Stiftschrift muss getestet werden.
 - Die WebGPU-Verfügbarkeit in Electron 43 unter Linux ist ungeprüft, deshalb vorerst nur WASM.
 
+**Recherche 2026-10-17:** [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OPTIONEN-2026-10.md) (Notizen in `recherche/notizen/`). Ergebnis: Es gibt kein besseres kleines Modell. Der größte Hebel ist der Decoder (siehe M15 unten). Danach folgen Render-Tuning und PP-OCRv6 statt Tesseract.js.
+
 ### Verworfen
 
 - **TrOCR** (transformers.js): Für Deutsch gibt es nur einen 2,4-GB-Fine-Tune ohne ONNX, dazu ca. 2 s pro Zeile.
