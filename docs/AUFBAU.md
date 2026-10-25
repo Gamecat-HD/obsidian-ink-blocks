@@ -266,3 +266,17 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
   - Vault-Änderungen markieren das LM als veraltet; es wird frühestens nach 10 min neu gebaut.
   - Die Engine-Version bekommt `+lm`, damit beim Umschalten der Zeilen-Cache neu erkannt wird. Ein neu gebautes LM verwirft den Cache nicht.
 - **Messung** (`scripts/bench/`): `dump_logits.py` berechnet die v2-Logits der ScaDS-Zeilen im v1-Split von naeyn (Val 567 / Test 601, unbekannte Schreiber). `npm run bench:decoder` vergleicht die Decoder. α/β werden auf Val gewählt, berichtet wird auf Test.
+
+### v0.4.0 (M16–M20): Editor nach GoodNotes-Vorbild
+
+- **M16 Lasso (`model/selection.ts`, `input/Selection.ts`, `ui/SelectionLayer.ts`):**
+  - Neue Op `replace` (alte Striche raus, neue mit **neuen IDs** an der Stelle des ersten entfernten). Damit bleiben Striche unveränderlich; Merge, OCR-Cache und Undo funktionieren ohne Sonderfälle.
+  - Ein Strich ist ausgewählt, wenn ≥ 60 % seiner Punkte im Lasso liegen.
+  - Ausgewählte Striche werden aus den Kacheln genommen (`Surface.setHidden`) und in einer SVG-Ebene gezeigt. Verschieben/Skalieren ist dort nur eine Transformation, festgeschrieben wird beim Loslassen.
+  - Zwischenablage `plugin.clipboard` gilt blockübergreifend. Beim Einfügen in eine andere Breite wird mitskaliert, im selben Dokument wird versetzt eingefügt.
+  - „In Text umwandeln“ nutzt `OcrService.recognizeStrokes` (ohne Cache, schreibt nichts), „Als Text einfügen“ `BlockWriter.insertAfterBlock`.
+- **M17 Radierer:** Präzise Variante (`hitTest.splitStroke`): lange Segmente werden verdichtet, berührte Punkte fallen weg, Reste ab 2 Punkten werden Stücke mit neuen IDs. Die Geste baut am Ende aus dem Stand vor der Geste eine `replace`-Op und wendet sie neu an, damit Redo exakt dieselben Stücke liefert.
+- **M18 Abdeckband:** Werkzeug `tape` (Format `"t":"tape"`), immer gerade, Umriss in `render/tape.ts`. Es liegt in einer eigenen SVG-Ebene über den Kacheln, denn auf Arbeitsblättern werden die Kacheln multipliziert und ein Band dort würde gedruckten Text nicht verdecken. Aufgedeckt-Zustand `InkEntry.revealed`, nur pro Sitzung. Tippen (≤ 6 px Bewegung) auf ein Band schaltet um; wird daraus ein Strich, wird normal gezeichnet.
+- **M19 Farben/Papier:** `c` darf `#rrggbb` sein (`isInkColor`), eigene Farben je Werkzeug in `settings.customColors` (max. 4). `bgStyle: dots` mit Kästchenmaßen.
+- **M20 Gesten/Zoom:** `input/MultiTouch.ts` (Tippen ≤ 400 ms und ≤ 12 px; 2 Finger = Rückgängig, 3 = Wiederholen). Zoom nur in der ausgeklappten Ansicht (Breite × Zoom, Scroll-Anker bleibt unter Fingermitte bzw. Mauszeiger), dort steht die Leiste im Kopf.
+- **Formatänderung:** `tape` und Hex-Farben kennen ältere Plugin-Versionen nicht (`decodeInk` wirft) → auf allen Geräten v0.4 installieren. Die Lernplattform (`src/lib/ink.ts`) ist nachgezogen.
