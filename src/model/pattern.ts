@@ -1,6 +1,6 @@
 /** Hintergrundmuster einer Heft-Fläche: Stil und Linienabstand bzw. Kästchengröße (Doc-Einheiten). */
 
-export type BgStyle = "ruled" | "grid" | "blank";
+export type BgStyle = "ruled" | "grid" | "dots" | "blank";
 
 export interface Pattern {
 	style: BgStyle;
@@ -32,6 +32,11 @@ export const GAP_PRESETS: Record<Exclude<BgStyle, "blank">, { label: string; val
 		{ label: "Mittel", value: 25 },
 		{ label: "Groß", value: 35 },
 	],
+	dots: [
+		{ label: "Klein", value: 18 },
+		{ label: "Mittel", value: 25 },
+		{ label: "Groß", value: 35 },
+	],
 };
 
 /** Plausible Grenzen für `gap:` im Block (Tippfehler sollen keine 1-px-Linien erzeugen). */
@@ -39,7 +44,7 @@ const GAP_MIN = 8;
 const GAP_MAX = 200;
 
 export function isBgStyle(v: unknown): v is BgStyle {
-	return v === "ruled" || v === "grid" || v === "blank";
+	return v === "ruled" || v === "grid" || v === "dots" || v === "blank";
 }
 
 export function parseGap(v: string | undefined): number | null {
@@ -49,7 +54,8 @@ export function parseGap(v: string | undefined): number | null {
 }
 
 export function defaultGap(style: BgStyle, d: PatternDefaults): number {
-	return style === "grid" ? d.gridGap : d.ruledGap;
+	// Punkteraster: gleiche Maße wie Kästchen.
+	return style === "ruled" ? d.ruledGap : d.gridGap;
 }
 
 /** Muster eines Blocks aus seinen Feldern (`bgStyle:`, `gap:`), sonst aus den Einstellungen. */

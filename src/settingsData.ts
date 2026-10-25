@@ -1,5 +1,6 @@
 import type { EngineId } from "./ocr/models";
 import type { BgStyle } from "./model/pattern";
+import { isInkColor, type InkColor } from "./model/ink-format";
 
 export type ToolId = "pen" | "hl" | "tape" | "eraser" | "lasso";
 /** Breiten-Slot: 0 = fein, 1 = mittel, 2 = breit. */
@@ -10,14 +11,17 @@ export type WidthSizes = [number, number, number];
 export interface ToolState {
 	tool: ToolId;
 	/** Palettenindex für Stift bzw. Textmarker (siehe PEN_COLORS/HL_COLORS). */
-	penColor: number;
-	hlColor: number;
+	penColor: InkColor;
+	hlColor: InkColor;
 	penWidth: WidthSlot;
 	hlWidth: WidthSlot;
 	eraserWidth: WidthSlot;
-	tapeColor: number;
+	tapeColor: InkColor;
 	tapeWidth: WidthSlot;
 }
+
+export type ColorKind = "pen" | "hl" | "tape";
+export const MAX_CUSTOM_COLORS = 4;
 
 /** Radierer: ganze Striche entfernen oder nur die berührten Stellen (Striche werden geteilt). */
 export type EraserMode = "stroke" | "precise";
@@ -49,6 +53,8 @@ export interface InkSettings {
 	/** Radierer trifft nur Textmarker – die Schrift darunter bleibt. */
 	eraseHlOnly: boolean;
 	tools: ToolState;
+	/** Eigene Farben je Werkzeug (zuletzt gewählte zuerst, höchstens MAX_CUSTOM_COLORS). */
+	customColors: Record<ColorKind, string[]>;
 	/** Handschrift lokal erkennen und ins `text:`-Feld schreiben. */
 	ocrEnabled: boolean;
 	/** Ruhepause nach dem letzten Strich, bevor erkannt wird (Sekunden). */
@@ -77,6 +83,7 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	barrelErases: true,
 	eraserMode: "stroke",
 	eraseHlOnly: false,
+	customColors: { pen: [], hl: [], tape: [] },
 	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0, eraserWidth: 1, tapeColor: 6, tapeWidth: 0 },
 	ocrEnabled: true,
 	ocrDelay: 10,
@@ -119,6 +126,13 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	settings.tools.hlWidth = slot(settings.tools.hlWidth);
 	settings.tools.eraserWidth = raw.tools?.eraserWidth === undefined ? d.tools.eraserWidth : slot(settings.tools.eraserWidth);
 	settings.tools.tapeWidth = slot(settings.tools.tapeWidth);
+	for (const k of ["penColor", "hlColor", "tapeColor"] as const) if (!isInkColor(settings.tools[k])) settings.tools[k] = d.tools[k];
+	const custom = (raw.customColors ?? {}) as Partial<Record<ColorKind, unknown>>;
+	settings.customColors = { pen: [], hl: [], tape: [] };
+	for (const k of ["pen", "hl", "tape"] as const) {
+		const list = Array.isArray(custom[k]) ? custom[k] : [];
+		settings.customColors[k] = list.filter((c): c is string => typeof c === "string" && isInkColor(c)).slice(0, MAX_CUSTOM_COLORS);
+	}
 	if (settings.eraserMode !== "precise") settings.eraserMode = "stroke";
 	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
 	return settings;

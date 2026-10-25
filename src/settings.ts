@@ -34,7 +34,7 @@ export class InkSettingTab extends PluginSettingTab {
 			.setDesc("Für Schreibflächen ohne eigenes bgStyle.")
 			.addDropdown((dd) =>
 				dd
-					.addOptions({ ruled: "Liniert", grid: "Kariert", blank: "Leer" })
+					.addOptions({ ruled: "Liniert", grid: "Kariert", dots: "Punkteraster", blank: "Leer" })
 					.setValue(this.plugin.settings.bgStyle)
 					.onChange(async (value) => {
 						this.plugin.settings.bgStyle = value as BgStyle;
@@ -45,7 +45,7 @@ export class InkSettingTab extends PluginSettingTab {
 
 		this.slider("Linienabstand (liniert)", "Abstand der Linien. Je Fläche änderbar über den Hintergrund-Knopf der Leiste.", LIMITS.ruledGap, 1,
 			() => this.plugin.settings.ruledGap, (v) => (this.plugin.settings.ruledGap = v), () => this.plugin.refreshBlocks());
-		this.slider("Kästchengröße (kariert)", "Größe der Kästchen. Je Fläche änderbar über den Hintergrund-Knopf der Leiste.", LIMITS.gridGap, 1,
+		this.slider("Kästchengröße (kariert, Punkteraster)", "Größe der Kästchen bzw. Abstand der Punkte. Je Fläche änderbar über den Hintergrund-Knopf der Leiste.", LIMITS.gridGap, 1,
 			() => this.plugin.settings.gridGap, (v) => (this.plugin.settings.gridGap = v), () => this.plugin.refreshBlocks());
 
 		new Setting(containerEl).setName("Strichbreiten").setDesc("Gelten für neue Striche; Vorhandenes bleibt, wie es ist.").setHeading();

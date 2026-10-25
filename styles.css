@@ -30,6 +30,12 @@
 	background-size: var(--ink-gap) var(--ink-gap);
 }
 
+.ink-surface[data-bg="dots"] {
+	background-image: radial-gradient(circle at center, var(--text-faint) 1.1px, transparent 1.6px);
+	background-size: var(--ink-gap) var(--ink-gap);
+	background-position: calc(var(--ink-gap) / -2) calc(var(--ink-gap) / -2);
+}
+
 .ink-tiles,
 .ink-tile {
 	position: absolute;
@@ -628,4 +634,25 @@
 
 .ink-tape.is-revealed path:first-child {
 	filter: none;
+}
+
+/* ---- Eigene Farben ---- */
+
+.ink-tb-custom {
+	display: contents;
+}
+
+.ink-tb-color-input {
+	position: absolute;
+	width: 0;
+	height: 0;
+	padding: 0;
+	border: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.ink-toolbar .ink-tb-add-color svg {
+	width: 14px;
+	height: 14px;
 }

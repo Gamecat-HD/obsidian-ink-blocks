@@ -21,6 +21,15 @@ describe("Einstellungen", () => {
 		expect(s.hlSizes).toEqual([60, 20, 30]);
 		expect(s.tools.penWidth).toBe(0);
 	});
+	it("eigene Farben: nur #rrggbb, höchstens vier je Werkzeug", () => {
+		const s = normalizeSettings({
+			customColors: { pen: ["#112233", "rot", "#445566", "#778899", "#aabbcc", "#ddeeff"], hl: "kaputt" },
+			tools: { penColor: "#112233", hlColor: "blau" },
+		} as never);
+		expect(s.customColors).toEqual({ pen: ["#112233", "#445566", "#778899", "#aabbcc"], hl: [], tape: [] });
+		expect(s.tools.penColor).toBe("#112233");
+		expect(s.tools.hlColor).toBe(3);
+	});
 	it("Defaults werden nicht verändert", () => {
 		const s = normalizeSettings({});
 		s.penSizes[0] = 9;

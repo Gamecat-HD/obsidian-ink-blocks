@@ -2,7 +2,7 @@ import { Menu, setIcon, setTooltip } from "obsidian";
 import type InkBlocksPlugin from "../main";
 import { defaultGap, GAP_PRESETS, type BgStyle, type Pattern, type PatternChange } from "../model/pattern";
 import { HL_COLORS, PALETTE, PEN_COLORS, TAPE_COLORS } from "../render/strokes";
-import type { ToolId, WidthSlot } from "../settings";
+import { MAX_CUSTOM_COLORS, type ColorKind, type ToolId, type WidthSlot } from "../settings";
 import { GapPopover } from "./GapPopover";
 
 export interface ToolbarActions {
@@ -35,6 +35,7 @@ const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 const BG_ICON: Record<BgStyle, { icon: string; label: string }> = {
 	ruled: { icon: "align-justify", label: "Liniert" },
 	grid: { icon: "grid", label: "Kariert" },
+	dots: { icon: "grip", label: "Punkteraster" },
 	blank: { icon: "square", label: "Leer" },
 };
 
@@ -53,6 +54,9 @@ export class Toolbar {
 	private readonly bar: HTMLElement;
 	private readonly toolButtons = new Map<ToolId, HTMLElement>();
 	private readonly swatches: HTMLElement[] = [];
+	private readonly customEl: HTMLElement;
+	private readonly addColorBtn: HTMLElement;
+	private readonly colorInput: HTMLInputElement;
 	private readonly widths: HTMLElement[] = [];
 	private readonly undoBtn: HTMLElement;
 	private readonly redoBtn: HTMLElement;
@@ -94,6 +98,12 @@ export class Toolbar {
 			sw.addEventListener("click", () => this.setColor(i));
 			this.swatches.push(sw);
 		}
+		// Eigene Farben (je Werkzeug) und „+“ mit dem Farbwähler des Systems.
+		this.customEl = colors.createDiv({ cls: "ink-tb-custom" });
+		this.addColorBtn = this.button(colors, "plus", "Eigene Farbe …", () => this.pickColor());
+		this.addColorBtn.addClass("ink-tb-add-color");
+		this.colorInput = colors.createEl("input", { type: "color", cls: "ink-tb-color-input" });
+		this.colorInput.addEventListener("change", () => this.addCustomColor(this.colorInput.value));
 
 		const widths = this.group();
 		for (const w of WIDTHS) {
@@ -145,6 +155,22 @@ export class Toolbar {
 			sw.dataset.color = String(index);
 			setTooltip(sw, `Farbe ${i + 1}`);
 		});
+		const kind = this.colorKind();
+		this.customEl.empty();
+		this.addColorBtn.toggle(kind !== null);
+		for (const color of kind ? this.plugin.settings.customColors[kind] : []) {
+			const sw = this.customEl.createEl("button", { cls: "ink-tb-swatch clickable-icon is-custom" });
+			sw.style.setProperty("--swatch", color);
+			sw.dataset.color = color;
+			sw.toggleClass("is-active", color === current);
+			setTooltip(sw, `${color} (Rechtsklick: entfernen)`);
+			sw.addEventListener("click", () => this.setColor(color));
+			sw.addEventListener("contextmenu", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.removeCustomColor(color, e);
+			});
+		}
 		const width = hl ? t.hlWidth : tape ? t.tapeWidth : t.tool === "eraser" ? t.eraserWidth : t.penWidth;
 		this.widths.forEach((btn, i) => btn.toggleClass("is-active", i === width));
 		this.bar.toggleClass("is-eraser", t.tool === "eraser");
@@ -164,7 +190,7 @@ export class Toolbar {
 		this.bgBtn.toggle(pattern !== null);
 		if (pattern) {
 			setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
-			const what = pattern.style === "grid" ? "Kästchengröße" : "Zeilenabstand";
+			const what = pattern.style === "ruled" ? "Zeilenabstand" : pattern.style === "dots" ? "Punktabstand" : "Kästchengröße";
 			setTooltip(this.bgBtn, `Hintergrund: ${BG_ICON[pattern.style].label.toLowerCase()}${pattern.style === "blank" ? "" : ` · ${what} ${pattern.gap}`}`);
 			this.bgBtn.dataset.bg = pattern.style;
 		}
@@ -217,12 +243,53 @@ export class Toolbar {
 		this.plugin.toolsChanged();
 	}
 
-	private setColor(i: number) {
+	/** Für welche Werkzeug-Palette die Farbknöpfe gerade stehen (Radierer/Lasso: Stift). */
+	private colorKind(): ColorKind | null {
+		const tool = this.plugin.settings.tools.tool;
+		return tool === "hl" || tool === "tape" ? tool : "pen";
+	}
+
+	private pickColor() {
 		const t = this.plugin.settings.tools;
-		if (t.tool === "hl") t.hlColor = HL_COLORS[i];
-		else if (t.tool === "tape") t.tapeColor = TAPE_COLORS[i];
+		const current = t.tool === "hl" ? t.hlColor : t.tool === "tape" ? t.tapeColor : t.penColor;
+		this.colorInput.value = typeof current === "string" ? current : "#7048e8";
+		this.colorInput.click();
+	}
+
+	private addCustomColor(color: string) {
+		const kind = this.colorKind();
+		if (!kind || !/^#[0-9a-f]{6}$/i.test(color)) return;
+		const list = this.plugin.settings.customColors[kind];
+		this.plugin.settings.customColors[kind] = [color, ...list.filter((c) => c !== color)].slice(0, MAX_CUSTOM_COLORS);
+		this.setColor(color);
+	}
+
+	private removeCustomColor(color: string, e: MouseEvent) {
+		const kind = this.colorKind();
+		if (!kind) return;
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i.setTitle("Farbe entfernen").setIcon("trash-2").onClick(() => {
+				const settings = this.plugin.settings;
+				settings.customColors[kind] = settings.customColors[kind].filter((c) => c !== color);
+				const t = settings.tools;
+				if (kind === "pen" && t.penColor === color) t.penColor = PEN_COLORS[0];
+				if (kind === "hl" && t.hlColor === color) t.hlColor = HL_COLORS[0];
+				if (kind === "tape" && t.tapeColor === color) t.tapeColor = TAPE_COLORS[0];
+				this.plugin.toolsChanged();
+			}),
+		);
+		menu.showAtMouseEvent(e);
+	}
+
+	/** Paletten-Slot (Zahl = Position in der Palette des Werkzeugs) oder eigene Farbe (`#rrggbb`). */
+	private setColor(slotOrColor: number | string) {
+		const t = this.plugin.settings.tools;
+		const pick = (palette: number[]) => (typeof slotOrColor === "string" ? slotOrColor : palette[slotOrColor]);
+		if (t.tool === "hl") t.hlColor = pick(HL_COLORS);
+		else if (t.tool === "tape") t.tapeColor = pick(TAPE_COLORS);
 		else {
-			t.penColor = PEN_COLORS[i];
+			t.penColor = pick(PEN_COLORS);
 			if (t.tool === "eraser" || t.tool === "lasso") t.tool = "pen";
 		}
 		this.plugin.toolsChanged();
@@ -233,7 +300,7 @@ export class Toolbar {
 		const p = this.actions.pattern();
 		if (!p) return;
 		const menu = new Menu();
-		for (const style of ["ruled", "grid", "blank"] as const) {
+		for (const style of ["ruled", "grid", "dots", "blank"] as const) {
 			menu.addItem((item) =>
 				item
 					.setTitle(BG_ICON[style].label)
@@ -246,7 +313,7 @@ export class Toolbar {
 			menu.addSeparator();
 			menu.addItem((item) =>
 				item
-					.setTitle(p.style === "grid" ? `Kästchengröße einstellen … (${p.gap})` : `Zeilenabstand einstellen … (${p.gap})`)
+					.setTitle(`${p.style === "ruled" ? "Zeilenabstand" : p.style === "dots" ? "Punktabstand" : "Kästchengröße"} einstellen … (${p.gap})`)
 					.setIcon("sliders-horizontal")
 					.onClick(() => this.showGapPopover()),
 			);

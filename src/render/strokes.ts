@@ -1,5 +1,5 @@
 import { getStroke, type StrokeOptions } from "perfect-freehand";
-import type { Space, Stroke, Tool } from "../model/ink-format";
+import type { InkColor, Space, Stroke, Tool } from "../model/ink-format";
 import { svgPathFromOutline } from "./svgPath";
 import { tapeSvg } from "./tape";
 
@@ -82,7 +82,8 @@ export function strokePath(stroke: Stroke): Path2D {
 }
 
 /** Farbe 0 („Tinte“) folgt im Heft dem Theme, auf Arbeitsblättern ist sie schwarz. */
-export function resolveColor(index: number, space: Space, el: HTMLElement): string {
+export function resolveColor(index: InkColor, space: Space, el: HTMLElement): string {
+	if (typeof index === "string") return index;
 	const color = PALETTE[index] ?? PALETTE[0];
 	if (color !== "ink") return color;
 	return space === "page" ? "#111" : getComputedStyle(el).getPropertyValue("--text-normal").trim() || "#222";

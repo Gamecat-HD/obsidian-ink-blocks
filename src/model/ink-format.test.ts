@@ -9,6 +9,7 @@ function sample(): InkData {
 		{ id: "s2", tool: "hl", color: 2, size: 12, points: [100, 100, 0.2], simulated: true },
 		{ id: "s3", tool: "pen", color: 1, size: 3, points: [0, 0, 0.5, 50, 0, 0.5], simulated: true, shape: true },
 		{ id: "s4", tool: "tape", color: 6, size: 26, points: [0, 40, 0.5, 300, 40, 0.5] },
+		{ id: "s5", tool: "pen", color: "#7048e8", size: 3, points: [1, 1, 0.5] },
 	);
 	doc.ocr = { engine: "htr-v2@abcd", lines: { deadbeef: "Hallo" }, written: "1234abcd" };
 	return doc;
@@ -42,19 +43,24 @@ describe("encodeInk/decodeInk", () => {
 			["s2", "hl", 2, 12, 3],
 			["s3", "pen", 1, 3, 6],
 			["s4", "tape", 6, 26, 6],
+			["s5", "pen", "#7048e8", 3, 3],
 		]);
-		expect(back.strokes.map((s) => s.simulated)).toEqual([undefined, true, true, undefined]);
-		expect(back.strokes.map((s) => s.shape)).toEqual([undefined, undefined, true, undefined]);
+		expect(back.strokes.map((s) => s.simulated)).toEqual([undefined, true, true, undefined, undefined]);
+		expect(back.strokes.map((s) => s.shape)).toEqual([undefined, undefined, true, undefined, undefined]);
 	});
 	it("schreibt einen Strich pro Zeile", () => {
 		const lines = encodeInk(sample()).trimEnd().split("\n");
-		expect(lines).toHaveLength(6);
+		expect(lines).toHaveLength(7);
 		expect(lines[1]).toMatch(/^\{"id":"s1"/);
 	});
 	it("leeres Dokument ist gültiges JSON", () => {
 		const text = encodeInk(createNotebook("x"));
 		expect(JSON.parse(text).strokes).toEqual([]);
 		expect(decodeInk(text).strokes).toEqual([]);
+	});
+	it("eigene Farben nur als #rrggbb", () => {
+		const bad = '{"v":1,"id":"x","space":"nb","w":1000,"h":400,"strokes":[{"id":"a","t":"pen","c":"red","s":2,"p":[0,0,0]}]}';
+		expect(() => decodeInk(bad)).toThrow(/Strich 0/);
 	});
 	it("lehnt kaputte Daten ab", () => {
 		expect(() => decodeInk("{")).toThrow(InkFormatError);

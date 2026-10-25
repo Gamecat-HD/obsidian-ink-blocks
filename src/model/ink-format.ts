@@ -9,12 +9,18 @@
 /** Stift, Textmarker, Abdeckband (deckend, zum Lernen per Tippen aufdeckbar). */
 export type Tool = "pen" | "hl" | "tape";
 export type Space = "nb" | "page";
+/** Palettenindex (siehe render/strokes.ts) oder eigene Farbe als `#rrggbb`. */
+export type InkColor = number | string;
+
+export function isInkColor(v: unknown): v is InkColor {
+	return (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v));
+}
 
 export interface Stroke {
 	id: string;
 	tool: Tool;
-	/** Palettenindex, 0 = „Tinte“ (Theme-Textfarbe bzw. Schwarz auf Arbeitsblättern). */
-	color: number;
+	/** Palettenindex (0 = „Tinte“: Theme-Textfarbe bzw. Schwarz auf Arbeitsblättern) oder `#rrggbb`. */
+	color: InkColor;
 	/** Strichbreite in Doc-Einheiten. */
 	size: number;
 	points: number[];
@@ -104,7 +110,7 @@ export function decodePoints(encoded: number[], q = Q): number[] {
 interface StoredStroke {
 	id: string;
 	t: Tool;
-	c: number;
+	c: InkColor;
 	s: number;
 	p: number[];
 	sp?: 1;
@@ -142,7 +148,7 @@ export function decodeInk(text: string): InkData {
 	if (!Array.isArray(raw.strokes)) throw new InkFormatError("strokes fehlt");
 
 	const strokes = (raw.strokes as StoredStroke[]).map((s, i) => {
-		if (typeof s?.id !== "string" || (s.t !== "pen" && s.t !== "hl" && s.t !== "tape") || !isNum(s.c) || !isNum(s.s)) {
+		if (typeof s?.id !== "string" || (s.t !== "pen" && s.t !== "hl" && s.t !== "tape") || !isInkColor(s.c) || !isNum(s.s)) {
 			throw new InkFormatError(`Strich ${i} ungültig`);
 		}
 		if (!Array.isArray(s.p) || s.p.length % 3 !== 0 || !s.p.every(isNum)) {

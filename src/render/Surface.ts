@@ -1,4 +1,4 @@
-import type { InkData } from "../model/ink-format";
+import type { InkColor, InkData } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
 import type { Pattern } from "../model/pattern";
 import { HL_ALPHA, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
@@ -15,7 +15,7 @@ interface TileState {
 export interface LiveStroke {
 	path: Path2D;
 	bounds: Bounds;
-	color: number;
+	color: InkColor;
 	highlighter: boolean;
 	/** Abdeckband: SVG-Pfad – landet in der Band-Ebene statt auf den Kacheln. */
 	tape?: string;
@@ -154,7 +154,7 @@ export class Surface {
 		this.el.dataset.tapes = String(tapes.length);
 	}
 
-	private tapeElement(d: string, color: number, revealed: boolean, id?: string): SVGGElement {
+	private tapeElement(d: string, color: InkColor, revealed: boolean, id?: string): SVGGElement {
 		const g = document.createElementNS(SVG_NS, "g");
 		g.classList.add("ink-tape");
 		if (id) g.dataset.id = id;
@@ -260,7 +260,7 @@ export class Surface {
 		}
 	}
 
-	color(index: number): string {
+	color(index: InkColor): string {
 		if (index !== 0) return resolveColor(index, this.doc.space, this.el);
 		if (!this.inkColor) this.inkColor = resolveColor(0, this.doc.space, this.el);
 		return this.inkColor;
@@ -310,7 +310,7 @@ export class Surface {
 		if (region) ctx.restore();
 	}
 
-	private fill(ctx: CanvasRenderingContext2D, color: number, path: Path2D) {
+	private fill(ctx: CanvasRenderingContext2D, color: InkColor, path: Path2D) {
 		ctx.fillStyle = this.color(color);
 		ctx.fill(path);
 	}

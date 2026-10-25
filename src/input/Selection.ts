@@ -1,6 +1,7 @@
 import { Menu, Notice } from "obsidian";
 import type InkBlocksPlugin from "../main";
-import type { Stroke } from "../model/ink-format";
+import type { InkColor, Stroke } from "../model/ink-format";
+import type { ColorKind } from "../settingsData";
 import { applyOp, strokeBounds, replaceOp, type Bounds, type InkOp } from "../model/ops";
 import {
 	clampMove,
@@ -13,7 +14,7 @@ import {
 	transformStroke,
 	type Transform,
 } from "../model/selection";
-import { HL_ALPHA, HL_COLORS, PALETTE, PEN_COLORS, strokePath } from "../render/strokes";
+import { HL_ALPHA, HL_COLORS, PALETTE, PEN_COLORS, strokePath, TAPE_COLORS } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { SelectionLayer } from "../ui/SelectionLayer";
@@ -42,6 +43,8 @@ export interface SelectionHost {
 const PASTE_OFFSET = 24;
 const MIN_SIZE = 8;
 const MAX_SCALE = 6;
+
+const kindOf = (s: Stroke): ColorKind => (s.tool === "hl" ? "hl" : s.tool === "tape" ? "tape" : "pen");
 
 const COLOR_NAMES = ["Tinte", "Blau", "Rot", "Gelb", "Grün", "Pink", "Hellblau", "Orange", "Lila"];
 
@@ -271,13 +274,14 @@ export class Selection {
 		this.set(placed.map((s) => s.id));
 	}
 
-	recolor(color: number) {
+	/** Striche einer Art umfärben (Stift-Farben für Stifte, Marker-Farben für Textmarker, Band-Farben fürs Band). */
+	recolor(color: InkColor, kind: ColorKind) {
 		if (!this.active) return;
-		const hl = HL_COLORS.includes(color);
-		// Stiftfarben färben Stifte (und Formen), Markerfarben die Textmarker – die Deckkraft bleibt so stimmig.
-		const changed = this.strokes.some((s) => (s.tool === "hl") === hl && s.color !== color);
-		if (!changed) return;
-		this.replace(this.strokes.map((s) => ((s.tool === "hl") === hl ? recolorStroke(s, color, shortId(6)) : { ...s, id: shortId(6) })));
+		const hit = (s: Stroke) => kindOf(s) === kind;
+		if (!this.strokes.some((s) => hit(s) && s.color !== color)) return;
+		this.replace(this.strokes.map((s) => (hit(s) ? recolorStroke(s, color, shortId(6)) : { ...s, id: shortId(6) })));
+		// Farbleiste offen lassen: Farben durchprobieren, ohne sie jedes Mal neu zu öffnen.
+		this.toggleColors();
 	}
 
 	/** Rechtsklick bzw. Tippen mit dem Lasso ins Leere: Einfügen, Alles auswählen (bei Auswahl deren Aktionen). */
@@ -302,18 +306,22 @@ export class Selection {
 
 	private toggleColors() {
 		if (this.colors) return this.closeColors();
-		const kinds = new Set(this.strokes.map((s) => (s.tool === "hl" ? "hl" : "pen")));
+		const kinds = new Set(this.strokes.map(kindOf));
 		const box = this.layer.bar.createDiv({ cls: "ink-selection-colors" });
 		const ink = this.host.entry.doc.space === "page" ? "#111" : "var(--text-normal)";
-		for (const [kind, list] of [["pen", PEN_COLORS], ["hl", HL_COLORS]] as const) {
+		const custom = this.host.plugin.settings.customColors;
+		for (const [kind, list] of [["pen", PEN_COLORS], ["hl", HL_COLORS], ["tape", TAPE_COLORS]] as const) {
 			if (!kinds.has(kind)) continue;
 			const row = box.createDiv({ cls: "ink-selection-color-row" });
-			for (const c of list) {
-				const sw = row.createEl("button", { cls: "ink-tb-swatch clickable-icon", attr: { "aria-label": COLOR_NAMES[c] ?? "" } });
+			row.dataset.kind = kind;
+			for (const c of [...list, ...custom[kind]]) {
+				const name = typeof c === "number" ? COLOR_NAMES[c] ?? "" : c;
+				const sw = row.createEl("button", { cls: "ink-tb-swatch clickable-icon", attr: { "aria-label": name } });
 				sw.dataset.color = String(c);
-				sw.style.setProperty("--swatch", PALETTE[c] === "ink" ? ink : PALETTE[c]);
+				sw.style.setProperty("--swatch", typeof c === "string" ? c : PALETTE[c] === "ink" ? ink : PALETTE[c]);
 				if (kind === "hl") sw.style.setProperty("--swatch-alpha", String(HL_ALPHA + 0.25));
-				sw.addEventListener("click", () => this.recolor(c));
+				sw.toggleClass("is-active", this.strokes.every((s) => kindOf(s) !== kind || s.color === c));
+				sw.addEventListener("click", () => this.recolor(c, kind));
 			}
 		}
 		this.colors = box;

@@ -1,5 +1,5 @@
 import type InkBlocksPlugin from "../main";
-import type { Stroke, Tool } from "../model/ink-format";
+import type { InkColor, Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, replaceOp, strokeBounds, type Bounds, type InkOp } from "../model/ops";
 import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
@@ -31,7 +31,7 @@ type Gesture =
 			kind: "draw";
 			pointerId: number;
 			tool: Tool;
-			color: number;
+			color: InkColor;
 			size: number;
 			simulated: boolean;
 			/** Textmarker als gerade Linie (Lineal): Punkte = Strecke vom Start zum Stift. */

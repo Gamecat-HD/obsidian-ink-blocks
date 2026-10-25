@@ -7,6 +7,8 @@ describe("Muster", () => {
 	it("nimmt Stil und Abstand aus den Einstellungen, wenn der Block nichts sagt", () => {
 		expect(resolvePattern({}, D)).toEqual({ style: "ruled", gap: 40, custom: false });
 		expect(resolvePattern({ bgStyle: "grid" }, D)).toEqual({ style: "grid", gap: 25, custom: false });
+		// Punkteraster: Abstand wie Kästchen
+		expect(resolvePattern({ bgStyle: "dots" }, D)).toEqual({ style: "dots", gap: 25, custom: false });
 	});
 	it("Block-Feld gap überschreibt, ungültige Werte werden ignoriert", () => {
 		expect(resolvePattern({ bgStyle: "grid", gap: "18" }, D)).toEqual({ style: "grid", gap: 18, custom: true });

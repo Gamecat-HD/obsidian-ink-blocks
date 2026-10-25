@@ -32,7 +32,7 @@ export class GapPopover {
 		this.custom = pattern.custom;
 
 		this.el = document.body.createDiv({ cls: "ink-gap-popover" });
-		this.el.createDiv({ cls: "ink-gap-title", text: grid ? "Kästchengröße" : "Zeilenabstand" });
+		this.el.createDiv({ cls: "ink-gap-title", text: grid ? "Kästchengröße" : pattern.style === "dots" ? "Punktabstand" : "Zeilenabstand" });
 		const row = this.el.createDiv({ cls: "ink-gap-row" });
 		const minus = row.createEl("button", { cls: "ink-gap-step", text: "−", attr: { "aria-label": "Kleiner" } });
 		const slider = row.createEl("input", { cls: "ink-gap-slider", type: "range" });
@@ -104,5 +104,5 @@ export class GapPopover {
 }
 
 function range(style: BgStyle): readonly [number, number] {
-	return style === "grid" ? LIMITS.gridGap : LIMITS.ruledGap;
+	return style === "ruled" ? LIMITS.ruledGap : LIMITS.gridGap;
 }
