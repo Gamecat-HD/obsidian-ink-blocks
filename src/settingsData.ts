@@ -14,7 +14,13 @@ export interface ToolState {
 	hlColor: number;
 	penWidth: WidthSlot;
 	hlWidth: WidthSlot;
+	eraserWidth: WidthSlot;
 }
+
+/** Radierer: ganze Striche entfernen oder nur die berührten Stellen (Striche werden geteilt). */
+export type EraserMode = "stroke" | "precise";
+/** Radius des Radierers je Breiten-Slot (Doc-Einheiten). */
+export const ERASER_SIZES: WidthSizes = [5, 10, 20];
 
 export interface InkSettings {
 	/** Ordner für die .ink-Dateien, relativ zum Vault. */
@@ -37,6 +43,9 @@ export interface InkSettings {
 	mouseDraws: boolean;
 	/** Seitentaste des Stifts radiert (zusätzlich zum Radierer-Ende). */
 	barrelErases: boolean;
+	eraserMode: EraserMode;
+	/** Radierer trifft nur Textmarker – die Schrift darunter bleibt. */
+	eraseHlOnly: boolean;
 	tools: ToolState;
 	/** Handschrift lokal erkennen und ins `text:`-Feld schreiben. */
 	ocrEnabled: boolean;
@@ -64,7 +73,9 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	penOnly: true,
 	mouseDraws: true,
 	barrelErases: true,
-	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0 },
+	eraserMode: "stroke",
+	eraseHlOnly: false,
+	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0, eraserWidth: 1 },
 	ocrEnabled: true,
 	ocrDelay: 10,
 	ocrEngine: "auto",
@@ -104,6 +115,8 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	settings.hlSizes = sizes(raw.hlSizes, d.hlSizes, LIMITS.hlSize);
 	settings.tools.penWidth = slot(settings.tools.penWidth);
 	settings.tools.hlWidth = slot(settings.tools.hlWidth);
+	settings.tools.eraserWidth = raw.tools?.eraserWidth === undefined ? d.tools.eraserWidth : slot(settings.tools.eraserWidth);
+	if (settings.eraserMode !== "precise") settings.eraserMode = "stroke";
 	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
 	return settings;
 }

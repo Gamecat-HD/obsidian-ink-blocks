@@ -1,21 +1,20 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
-import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
+import { applyOp, opBounds, pointsBounds, replaceOp, strokeBounds, type Bounds, type InkOp } from "../model/ops";
 import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
 import { outlinePath } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
-import { eraserHits } from "./hitTest";
+import { ERASER_SIZES } from "../settingsData";
+import { eraserHits, splitStroke } from "./hitTest";
 import type { Selection } from "./Selection";
 
 const BUTTON_BARREL = 2;
 const BUTTON_ERASER = 32;
 /** Mindestabstand zwischen zwei gespeicherten Punkten (Doc-Einheiten). */
 const MIN_STEP = 0.3;
-/** Radius des Radierers in Doc-Einheiten. */
-const ERASER_RADIUS = 8;
 /** So lange nach dem Absetzen des Stifts werden Berührungen noch als Handballen ignoriert. */
 const PALM_GRACE_MS = 500;
 /** Lasso: neue Punkte erst ab diesem Abstand (CSS-px); kürzere Lassos gelten als Tippen. */
@@ -54,6 +53,13 @@ type Gesture =
 			removed: Extract<InkOp, { kind: "erase" }>["removed"];
 			/** Index jedes Strichs zu Beginn der Geste – damit Undo die Reihenfolge exakt wiederherstellt. */
 			origIndex: Map<string, number>;
+			radius: number;
+			/** Präzise: berührte Stellen ausschneiden (Striche teilen) statt ganze Striche zu entfernen. */
+			precise: boolean;
+			hlOnly: boolean;
+			/** Präzise: Strichliste vor der Geste und die dabei entstandenen Stücke. */
+			snapshot: Stroke[];
+			pieces: Map<string, Stroke>;
 	  }
 	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null }
 	| { kind: "lasso"; pointerId: number; poly: number[]; clientX: number; clientY: number; tap: boolean }
@@ -168,8 +174,22 @@ export class PointerPipeline {
 		}
 
 		if (erase) {
-			const origIndex = new Map(this.entry.doc.strokes.map((st, i) => [st.id, i]));
-			this.gesture = { kind: "erase", pointerId: e.pointerId, x, y, removed: [], origIndex };
+			const strokes = this.entry.doc.strokes;
+			const origIndex = new Map(strokes.map((st, i) => [st.id, i]));
+			this.gesture = {
+				kind: "erase",
+				pointerId: e.pointerId,
+				x,
+				y,
+				removed: [],
+				origIndex,
+				radius: ERASER_SIZES[tools.eraserWidth],
+				precise: settings.eraserMode === "precise",
+				hlOnly: settings.eraseHlOnly,
+				snapshot: strokes.slice(),
+				pieces: new Map(),
+			};
+			this.showEraser(e);
 			this.eraseSegment(x, y, x, y);
 			return;
 		}
@@ -198,8 +218,13 @@ export class PointerPipeline {
 
 	private readonly onMove = (e: PointerEvent) => {
 		const g = this.gesture;
-		if (!g || g.pointerId !== e.pointerId) return;
+		if (!g) {
+			this.hover(e);
+			return;
+		}
+		if (g.pointerId !== e.pointerId) return;
 		e.preventDefault();
+		if (g.kind === "erase") this.showEraser(e);
 
 		if (g.kind === "scroll") {
 			if (g.scroller) g.scroller.scrollTop -= e.clientY - g.lastY;
@@ -278,8 +303,9 @@ export class PointerPipeline {
 			applyOp(this.entry.doc, op);
 			this.surface.redraw([strokeBounds(stroke)]);
 			this.onOp(op);
-		} else if (g.kind === "erase" && g.removed.length) {
-			this.onOp({ kind: "erase", removed: g.removed });
+		} else if (g.kind === "erase") {
+			this.finishErase(g);
+			if (e.pointerType !== "pen" || e.type === "lostpointercapture") this.hideEraser();
 		} else if (g.kind === "lasso") {
 			this.selection.layer.setLasso(null);
 			const ids = g.tap ? [] : lassoSelect(this.entry.doc.strokes, g.poly);
@@ -303,8 +329,9 @@ export class PointerPipeline {
 				this.entry.doc.h = g.hStart;
 				this.surface.resize();
 			}
-		} else if (g.kind === "erase" && g.removed.length) {
-			this.onOp({ kind: "erase", removed: g.removed });
+		} else if (g.kind === "erase") {
+			this.finishErase(g);
+			this.hideEraser();
 		} else if (g.kind === "lasso") {
 			this.selection.layer.setLasso(null);
 		} else if (g.kind === "move" || g.kind === "scale") {
@@ -384,13 +411,73 @@ export class PointerPipeline {
 		const g = this.gesture;
 		if (g?.kind !== "erase") return;
 		const doc = this.entry.doc;
-		const removed = doc.strokes
-			.filter((stroke) => eraserHits(stroke, x1, y1, x2, y2, ERASER_RADIUS))
-			.map((stroke) => ({ stroke, index: g.origIndex.get(stroke.id) ?? doc.strokes.length }));
-		if (!removed.length) return;
-		const op: InkOp = { kind: "erase", removed };
-		applyOp(doc, op);
-		g.removed.push(...removed);
-		this.surface.redraw(opBounds(op));
+		const hits = doc.strokes.filter((s) => (!g.hlOnly || s.tool === "hl") && eraserHits(s, x1, y1, x2, y2, g.radius));
+		if (!hits.length) return;
+		if (!g.precise) {
+			const removed = hits.map((stroke) => ({ stroke, index: g.origIndex.get(stroke.id) ?? doc.strokes.length }));
+			const op: InkOp = { kind: "erase", removed };
+			applyOp(doc, op);
+			g.removed.push(...removed);
+			this.surface.redraw(opBounds(op));
+			return;
+		}
+		const dirty: Bounds[] = [];
+		for (const stroke of hits) {
+			const pieces = splitStroke(stroke, x1, y1, x2, y2, g.radius, () => shortId(6));
+			if (!pieces) continue;
+			doc.strokes.splice(doc.strokes.indexOf(stroke), 1, ...pieces);
+			// Ein Stück aus dieser Geste wird wieder geteilt: es war nie gespeichert, also nicht „entfernt“.
+			if (!g.pieces.delete(stroke.id)) g.removed.push({ stroke, index: g.origIndex.get(stroke.id) ?? 0 });
+			for (const p of pieces) g.pieces.set(p.id, p);
+			dirty.push(strokeBounds(stroke));
+		}
+		if (dirty.length) this.surface.redraw(dirty);
 	}
+
+	/** Radier-Geste als eine Op abschließen. Präzise: aus dem Stand vor der Geste neu aufbauen (exakt wie Redo). */
+	private finishErase(g: Extract<Gesture, { kind: "erase" }>) {
+		if (!g.removed.length) return;
+		if (!g.precise) {
+			this.onOp({ kind: "erase", removed: g.removed });
+			return;
+		}
+		const doc = this.entry.doc;
+		const added = doc.strokes.filter((s) => g.pieces.has(s.id));
+		doc.strokes = g.snapshot;
+		const op = replaceOp(doc, new Set(g.removed.map((r) => r.stroke.id)), added);
+		applyOp(doc, op);
+		this.surface.redraw(opBounds(op));
+		this.onOp(op);
+	}
+
+	// ---- Radierer-Cursor ----
+
+	private eraserEl: HTMLElement | null = null;
+
+	/** Ohne Geste: Kreis zeigen, solange der Radierer gewählt ist und Stift/Maus über der Fläche schweben. */
+	private hover(e: PointerEvent) {
+		if (e.pointerType === "touch" || this.plugin.settings.tools.tool !== "eraser") return this.hideEraser();
+		this.showEraser(e);
+	}
+
+	private showEraser(e: PointerEvent) {
+		const radius = ERASER_SIZES[this.plugin.settings.tools.eraserWidth] * this.surface.docScale;
+		if (!this.eraserEl) {
+			this.eraserEl = this.surface.el.createDiv({ cls: "ink-eraser-cursor" });
+			this.surface.el.addEventListener("pointerleave", this.onLeave);
+		}
+		const r = this.surface.el.getBoundingClientRect();
+		const el = this.eraserEl;
+		el.style.width = el.style.height = `${radius * 2}px`;
+		el.style.transform = `translate(${e.clientX - r.left - radius}px, ${e.clientY - r.top - radius}px)`;
+		el.style.display = "";
+	}
+
+	private hideEraser() {
+		if (this.eraserEl) this.eraserEl.style.display = "none";
+	}
+
+	private readonly onLeave = () => {
+		if (this.gesture?.kind !== "erase") this.hideEraser();
+	};
 }

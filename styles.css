@@ -187,7 +187,6 @@
 }
 
 .ink-toolbar.is-eraser .ink-tb-swatch,
-.ink-toolbar.is-eraser .ink-tb-width,
 .ink-toolbar.is-lasso .ink-tb-swatch,
 .ink-toolbar.is-lasso .ink-tb-width {
 	opacity: 0.4;
@@ -569,4 +568,46 @@
 .is-mobile .ink-selection-bar button {
 	width: 40px;
 	height: 40px;
+}
+
+/* ---- Radierer ---- */
+
+.ink-eraser-cursor {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: 3;
+	border: 1.5px solid var(--text-muted);
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--background-primary) 40%, transparent);
+	pointer-events: none;
+}
+
+.ink-surface:has(> .ink-eraser-cursor:not([style*="display: none"])) {
+	cursor: none;
+}
+
+/* Präziser Radierer bzw. „nur Textmarker“: kleine Markierung am Knopf. */
+.ink-toolbar button[data-tool="eraser"] {
+	position: relative;
+}
+
+.ink-toolbar button[data-tool="eraser"].is-precise::after,
+.ink-toolbar button[data-tool="eraser"].is-hl-only::before {
+	content: "";
+	position: absolute;
+	bottom: 3px;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+}
+
+.ink-toolbar button[data-tool="eraser"].is-precise::after {
+	right: 3px;
+	background: var(--interactive-accent);
+}
+
+.ink-toolbar button[data-tool="eraser"].is-hl-only::before {
+	left: 3px;
+	background: #fab005;
 }

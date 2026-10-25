@@ -54,3 +54,58 @@ export function eraserHits(stroke: Stroke, x1: number, y1: number, x2: number, y
 	}
 	return false;
 }
+
+/**
+ * Präziser Radierer: teilt einen Strich dort, wo die Radierer-Strecke ihn berührt. Liefert die übrigen Stücke
+ * (jeweils mit neuer ID aus `newId`) oder `null`, wenn der Strich nicht berührt wird. Lange Segmente werden
+ * vorher verdichtet, damit auch Formen mit weit auseinanderliegenden Stützpunkten sauber getrennt werden.
+ */
+export function splitStroke(
+	stroke: Stroke,
+	x1: number, y1: number, x2: number, y2: number,
+	radius: number,
+	newId: () => string,
+): Stroke[] | null {
+	if (!eraserHits(stroke, x1, y1, x2, y2, radius)) return null;
+	const tolerance = radius + stroke.size * 0.4;
+	const p = densify(stroke.points, Math.max(0.5, radius / 2));
+	const keep: boolean[] = [];
+	let removedAny = false;
+	for (let i = 0; i < p.length; i += 3) {
+		const hit = pointSegmentDistance(p[i], p[i + 1], x1, y1, x2, y2) <= tolerance;
+		keep.push(!hit);
+		if (hit) removedAny = true;
+	}
+	if (!removedAny) return null;
+	const pieces: Stroke[] = [];
+	let run: number[] = [];
+	const flush = () => {
+		// Einzelne Restpunkte wären nur Krümel.
+		if (run.length >= 6) pieces.push({ ...stroke, id: newId(), points: run });
+		run = [];
+	};
+	keep.forEach((k, j) => {
+		if (k) run.push(p[j * 3], p[j * 3 + 1], p[j * 3 + 2]);
+		else flush();
+	});
+	flush();
+	return pieces;
+}
+
+/** Zwischenpunkte einfügen, bis kein Segment länger als `step` ist (Druck linear interpoliert). */
+export function densify(points: number[], step: number): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < points.length; i += 3) {
+		if (i > 0) {
+			const [ax, ay, ap] = [points[i - 3], points[i - 2], points[i - 1]];
+			const [bx, by, bp] = [points[i], points[i + 1], points[i + 2]];
+			const n = Math.ceil(Math.hypot(bx - ax, by - ay) / step);
+			for (let k = 1; k < n; k++) {
+				const t = k / n;
+				out.push(ax + (bx - ax) * t, ay + (by - ay) * t, ap + (bp - ap) * t);
+			}
+		}
+		out.push(points[i], points[i + 1], points[i + 2]);
+	}
+	return out;
+}

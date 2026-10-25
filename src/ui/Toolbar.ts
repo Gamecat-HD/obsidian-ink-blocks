@@ -24,7 +24,7 @@ export interface ToolbarActions {
 const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 	{ id: "pen", icon: "pencil", label: "Stift" },
 	{ id: "hl", icon: "highlighter", label: "Textmarker" },
-	{ id: "eraser", icon: "eraser", label: "Radierer" },
+	{ id: "eraser", icon: "eraser", label: "Radierer (nochmal tippen: Optionen)" },
 	{ id: "lasso", icon: "lasso", label: "Lasso: auswählen, verschieben, kopieren" },
 ];
 
@@ -137,9 +137,12 @@ export class Toolbar {
 			sw.dataset.color = String(index);
 			setTooltip(sw, `Farbe ${i + 1}`);
 		});
-		const width = hl ? t.hlWidth : t.penWidth;
+		const width = hl ? t.hlWidth : t.tool === "eraser" ? t.eraserWidth : t.penWidth;
 		this.widths.forEach((btn, i) => btn.toggleClass("is-active", i === width));
 		this.bar.toggleClass("is-eraser", t.tool === "eraser");
+		const eraser = this.toolButtons.get("eraser");
+		eraser?.toggleClass("is-precise", this.plugin.settings.eraserMode === "precise");
+		eraser?.toggleClass("is-hl-only", this.plugin.settings.eraseHlOnly);
 		this.bar.toggleClass("is-lasso", t.tool === "lasso");
 
 		this.undoBtn.toggleClass("is-disabled", !this.actions.canUndo());
@@ -167,8 +170,32 @@ export class Toolbar {
 	}
 
 	private setTool(tool: ToolId) {
+		if (tool === "eraser" && this.plugin.settings.tools.tool === "eraser") return this.showEraserMenu();
 		this.plugin.settings.tools.tool = tool;
 		this.plugin.toolsChanged();
+	}
+
+	/** Radierer-Optionen: ganze Striche oder präzise, nur Textmarker. */
+	private showEraserMenu() {
+		const settings = this.plugin.settings;
+		const set = (change: () => void) => () => {
+			change();
+			this.plugin.toolsChanged();
+		};
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i.setTitle("Ganze Striche").setIcon("eraser").setChecked(settings.eraserMode === "stroke").onClick(set(() => (settings.eraserMode = "stroke"))),
+		);
+		menu.addItem((i) =>
+			i.setTitle("Präzise (nur berührte Stellen)").setIcon("scissors-line-dashed").setChecked(settings.eraserMode === "precise").onClick(set(() => (settings.eraserMode = "precise"))),
+		);
+		menu.addSeparator();
+		menu.addItem((i) =>
+			i.setTitle("Nur Textmarker radieren").setIcon("highlighter").setChecked(settings.eraseHlOnly).onClick(set(() => (settings.eraseHlOnly = !settings.eraseHlOnly))),
+		);
+		const btn = this.toolButtons.get("eraser");
+		const r = btn?.getBoundingClientRect();
+		if (r) menu.showAtPosition({ x: r.left, y: r.bottom + 4 });
 	}
 
 	private toggleStraight() {
@@ -243,9 +270,10 @@ export class Toolbar {
 	private setWidth(w: WidthSlot) {
 		const t = this.plugin.settings.tools;
 		if (t.tool === "hl") t.hlWidth = w;
+		else if (t.tool === "eraser") t.eraserWidth = w;
 		else {
 			t.penWidth = w;
-			if (t.tool === "eraser" || t.tool === "lasso") t.tool = "pen";
+			if (t.tool === "lasso") t.tool = "pen";
 		}
 		this.plugin.toolsChanged();
 	}

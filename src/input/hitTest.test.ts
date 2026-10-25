@@ -3,7 +3,7 @@ import { createNotebook, type Stroke } from "../model/ink-format";
 import { applyOp, invertOp, strokeBounds, type InkOp } from "../model/ops";
 import { tileLayout, tilesForBounds } from "../render/transform";
 import { svgPathFromOutline } from "../render/svgPath";
-import { eraserHits, pointSegmentDistance, segmentDistance } from "./hitTest";
+import { densify, eraserHits, pointSegmentDistance, segmentDistance, splitStroke } from "./hitTest";
 
 const stroke = (id: string, points: number[], size = 4): Stroke => ({ id, tool: "pen", color: 0, size, points });
 
@@ -95,5 +95,34 @@ describe("Radieren in mehreren Schritten", () => {
 		expect(doc.strokes.map((s) => s.id)).toEqual(["a", "c"]);
 		invertOp(doc, { kind: "erase", removed: [...step1, ...step2] });
 		expect(doc.strokes.map((s) => s.id)).toEqual(["a", "b", "c", "d", "e"]);
+	});
+});
+
+describe("präziser Radierer", () => {
+	let n = 0;
+	const id = () => `p${++n}`;
+	const line = stroke("l", [0, 0, 0.5, 100, 0, 0.9], 2);
+
+	it("verdichtet lange Segmente mit interpoliertem Druck", () => {
+		const d = densify([0, 0, 0, 10, 0, 1], 2.5);
+		expect(d.length / 3).toBe(5);
+		expect(d.slice(6, 9)).toEqual([5, 0, 0.5]);
+	});
+
+	it("teilt einen Strich in zwei Stücke mit neuen IDs", () => {
+		const pieces = splitStroke(line, 50, -20, 50, 20, 5, id);
+		expect(pieces).not.toBeNull();
+		expect(pieces?.length).toBe(2);
+		expect(pieces?.map((p) => p.id)).toEqual(["p1", "p2"]);
+		const xs = (p: Stroke) => p.points.filter((_, i) => i % 3 === 0);
+		expect(Math.max(...xs(pieces![0]))).toBeLessThan(45);
+		expect(Math.min(...xs(pieces![1]))).toBeGreaterThan(55);
+		expect(pieces![0].size).toBe(2);
+	});
+
+	it("am Ende abgeschnitten → ein Stück; ganz überdeckt → keins; daneben → null", () => {
+		expect(splitStroke(line, 100, -10, 100, 10, 5, id)?.length).toBe(1);
+		expect(splitStroke(stroke("k", [0, 0, 0.5, 4, 0, 0.5], 2), 2, -5, 2, 5, 5, id)).toEqual([]);
+		expect(splitStroke(line, 50, 30, 60, 30, 5, id)).toBeNull();
 	});
 });

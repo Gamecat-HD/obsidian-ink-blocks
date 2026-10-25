@@ -8,7 +8,8 @@ describe("Einstellungen", () => {
 	it("Daten aus v0.1 (2 Breiten, keine Abstände) bleiben gültig", () => {
 		const s = normalizeSettings({ bgStyle: "grid", tools: { tool: "hl", penColor: 1, hlColor: 4, penWidth: 1, hlWidth: 1 } } as never);
 		expect(s.bgStyle).toBe("grid");
-		expect(s.tools).toEqual({ tool: "hl", penColor: 1, hlColor: 4, penWidth: 1, hlWidth: 1 });
+		expect(s.tools).toEqual({ tool: "hl", penColor: 1, hlColor: 4, penWidth: 1, hlWidth: 1, eraserWidth: 1 });
+		expect(s.eraserMode).toBe("stroke");
 		expect(s.penSizes).toEqual([2.6, 4.6, 7]);
 		expect(s.ruledGap).toBe(40);
 	});
