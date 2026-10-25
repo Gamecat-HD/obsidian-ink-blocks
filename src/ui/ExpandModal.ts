@@ -13,6 +13,7 @@ export interface ExpandOptions {
 	background: ResolvedBackground;
 	/** Texterkennung zielt weiter auf den Block in der Notiz. */
 	ocrTarget(): OcrTarget | null;
+	insertText?(text: string): Promise<boolean>;
 }
 
 /**
@@ -55,6 +56,13 @@ export class ExpandModal extends Modal {
 			activate: () => this.editor?.surface.el.focus({ preventScroll: true }),
 			toggleExpand: () => this.close(),
 			expanded: true,
+			insertText: this.opts.insertText,
+		});
+		container.addEventListener("keydown", (e) => {
+			if (this.editor?.handleKey(e)) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
 		});
 		// Eigener Tastatur-Scope des Dialogs: Strg+Z & Co. wirken hier nur auf die Tinte.
 		this.scope.register(["Mod"], "z", () => (this.editor?.undo(), false));

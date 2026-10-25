@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import { readBlockField, writeBlockField } from "../block/BlockWriter";
 import type InkBlocksPlugin from "../main";
+import type { Stroke } from "../model/ink-format";
 import type { InkEntry } from "../store/InkStore";
 import { fnv1a } from "../util/hash";
 import { BENCHMARK_TITLE } from "./benchmark";
@@ -185,6 +186,28 @@ export class OcrService {
 		this.failed.add(engine.id);
 		engine.dispose();
 		this.engines.delete(engine.id);
+	}
+
+	/** Beliebige Striche erkennen, ohne Cache und ohne etwas zu schreiben (Lasso → „In Text umwandeln“). */
+	async recognizeStrokes(strokes: Stroke[]): Promise<string | null> {
+		const lines = segmentLines(strokes);
+		if (!lines.length) return "";
+		const refHeight = referenceHeight(strokes.filter((s) => s.tool === "pen" && !s.shape));
+		for (;;) {
+			const engine = await this.pickEngine();
+			if (!engine) return null;
+			const segs = lines.flat();
+			try {
+				const results = await engine.recognize(segs.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight })));
+				const byKey = new Map(segs.map((seg, i) => [seg.key, results[i]?.text ?? ""]));
+				return lines
+					.map((l) => l.map((seg) => byKey.get(seg.key)).filter(Boolean).join(" "))
+					.filter(Boolean)
+					.join("\n");
+			} catch (e) {
+				this.markFailed(engine, e);
+			}
+		}
 	}
 
 	private async recognize(target: OcrTarget, force: boolean): Promise<OcrOutcome> {

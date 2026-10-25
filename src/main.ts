@@ -2,6 +2,7 @@ import { debounce, getIconIds, loadPdfJs, Plugin, TFile, type TAbstractFile } fr
 import { InkBlockChild } from "./block/InkBlockChild";
 import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
+import type { InkClipboard } from "./input/Selection";
 import { OcrService } from "./ocr/OcrService";
 import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
@@ -15,6 +16,8 @@ export default class InkBlocksPlugin extends Plugin {
 	readonly blocks = new Set<InkBlockChild>();
 	/** Alle offenen Zeichenansichten (Blöcke und ausgeklappte Ansicht). */
 	readonly editors = new Set<InkEditor>();
+	/** Lasso: kopierte Striche, für alle Blöcke. */
+	clipboard: InkClipboard | null = null;
 	/** Zugriff für die E2E-Tests (scripts/e2e). */
 	readonly dev: {
 		loadPdfJs: typeof loadPdfJs;
@@ -69,7 +72,7 @@ export default class InkBlocksPlugin extends Plugin {
 	/** Werkzeugzustand geändert (Toolbar): alle Leisten aktualisieren, gebündelt speichern. */
 	toolsChanged() {
 		// Über alle Ansichten, auch die ausgeklappte (die gehört zu keinem Block).
-		for (const editor of this.editors) editor.toolbar.update();
+		for (const editor of this.editors) editor.toolsChanged();
 		this.saveSoon();
 	}
 

@@ -1,12 +1,14 @@
 import type InkBlocksPlugin from "../main";
 import type { Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, strokeBounds, type InkOp } from "../model/ops";
+import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
 import { outlinePath } from "../render/strokes";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
 import { eraserHits } from "./hitTest";
+import type { Selection } from "./Selection";
 
 const BUTTON_BARREL = 2;
 const BUTTON_ERASER = 32;
@@ -16,9 +18,9 @@ const MIN_STEP = 0.3;
 const ERASER_RADIUS = 8;
 /** So lange nach dem Absetzen des Stifts werden Berührungen noch als Handballen ignoriert. */
 const PALM_GRACE_MS = 500;
-/** Heft-Modus: kommt der Stift näher als GROW_MARGIN an den unteren Rand, wächst die Fläche um GROW_STEP. */
-const GROW_MARGIN = 120;
-const GROW_STEP = 300;
+/** Lasso: neue Punkte erst ab diesem Abstand (CSS-px); kürzere Lassos gelten als Tippen. */
+const LASSO_STEP_PX = 3;
+const TAP_PX = 6;
 /** Formerkennung: so lange (ms) muss der Stift ruhig liegen, bevor der Strich zur Form wird. */
 const HOLD_MS = 500;
 /** Kleinere Bewegungen (CSS-px) zählen beim Halten nicht – Zittern der Hand. */
@@ -53,7 +55,10 @@ type Gesture =
 			/** Index jedes Strichs zu Beginn der Geste – damit Undo die Reihenfolge exakt wiederherstellt. */
 			origIndex: Map<string, number>;
 	  }
-	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null };
+	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null }
+	| { kind: "lasso"; pointerId: number; poly: number[]; clientX: number; clientY: number; tap: boolean }
+	| { kind: "move"; pointerId: number; x0: number; y0: number; hStart: number }
+	| { kind: "scale"; pointerId: number; ox: number; oy: number; d0: number; hStart: number };
 
 /** Übersetzt Pointer-Events auf der Fläche in Striche bzw. Radieren. */
 export class PointerPipeline {
@@ -66,6 +71,7 @@ export class PointerPipeline {
 		private readonly plugin: InkBlocksPlugin,
 		private readonly entry: InkEntry,
 		private readonly surface: Surface,
+		private readonly selection: Selection,
 		/** Wird nach jeder abgeschlossenen Änderung aufgerufen. */
 		private readonly onOp: (op: InkOp) => void,
 		/** Wird bei jedem Stift-/Mauskontakt aufgerufen (Block aktivieren, Fokus für Ctrl+Z). */
@@ -86,6 +92,11 @@ export class PointerPipeline {
 				if (type === "contextmenu") e.preventDefault();
 			});
 		}
+		el.addEventListener("contextmenu", (e) => {
+			if (this.gesture || (e as PointerEvent).pointerType === "pen") return;
+			this.onActivate();
+			this.selection.contextMenu(e.clientX, e.clientY, this.surface.toDoc(e.clientX, e.clientY));
+		});
 	}
 
 	destroy() {
@@ -113,7 +124,10 @@ export class PointerPipeline {
 		if (e.pointerType === "touch") {
 			// Handballen während bzw. kurz nach dem Schreiben: weder zeichnen noch scrollen.
 			if (this.penDown || now < this.penUntil) return;
-			if (settings.penOnly) {
+			// Finger verschieben eine Auswahl auch, wenn nur der Stift zeichnet.
+			const at = this.surface.toDoc(e.clientX, e.clientY);
+			const onSelection = this.selection.hitFrame(at.x, at.y);
+			if (settings.penOnly && !onSelection) {
 				this.capture(e, false);
 				this.gesture = { kind: "scroll", pointerId: e.pointerId, lastY: e.clientY, scroller: this.scroller() };
 				return;
@@ -131,6 +145,27 @@ export class PointerPipeline {
 		const erase =
 			tools.tool === "eraser" ||
 			(e.pointerType === "pen" && ((e.buttons & BUTTON_ERASER) !== 0 || (settings.barrelErases && (e.buttons & BUTTON_BARREL) !== 0)));
+
+		// Auswahl: Griff skaliert, Rahmen verschiebt, daneben tippen wählt ab.
+		const sel = this.selection;
+		if (sel.active && !erase) {
+			const b = sel.bounds;
+			if (b && sel.hitHandle(x, y)) {
+				const d0 = Math.max(1, Math.hypot(x - b.minX, y - b.minY));
+				this.gesture = { kind: "scale", pointerId: e.pointerId, ox: b.minX, oy: b.minY, d0, hStart: this.entry.doc.h };
+				return;
+			}
+			if (sel.hitFrame(x, y)) {
+				this.gesture = { kind: "move", pointerId: e.pointerId, x0: x, y0: y, hStart: this.entry.doc.h };
+				return;
+			}
+		}
+		if (sel.active) sel.clear();
+
+		if (tools.tool === "lasso" && !erase) {
+			this.gesture = { kind: "lasso", pointerId: e.pointerId, poly: [x, y], clientX: e.clientX, clientY: e.clientY, tap: true };
+			return;
+		}
 
 		if (erase) {
 			const origIndex = new Map(this.entry.doc.strokes.map((st, i) => [st.id, i]));
@@ -169,6 +204,26 @@ export class PointerPipeline {
 		if (g.kind === "scroll") {
 			if (g.scroller) g.scroller.scrollTop -= e.clientY - g.lastY;
 			g.lastY = e.clientY;
+			return;
+		}
+
+		if (g.kind === "lasso") {
+			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			const n = g.poly.length;
+			if (Math.hypot(x - g.poly[n - 2], y - g.poly[n - 1]) * this.surface.docScale < LASSO_STEP_PX) return;
+			g.poly.push(x, y);
+			if (Math.hypot(e.clientX - g.clientX, e.clientY - g.clientY) > TAP_PX) g.tap = false;
+			this.selection.layer.setLasso(g.poly);
+			return;
+		}
+		if (g.kind === "move") {
+			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			this.selection.moveTo(x - g.x0, y - g.y0);
+			return;
+		}
+		if (g.kind === "scale") {
+			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			this.selection.scaleTo(Math.hypot(x - g.ox, y - g.oy) / g.d0);
 			return;
 		}
 
@@ -225,6 +280,13 @@ export class PointerPipeline {
 			this.onOp(op);
 		} else if (g.kind === "erase" && g.removed.length) {
 			this.onOp({ kind: "erase", removed: g.removed });
+		} else if (g.kind === "lasso") {
+			this.selection.layer.setLasso(null);
+			const ids = g.tap ? [] : lassoSelect(this.entry.doc.strokes, g.poly);
+			if (ids.length) this.selection.set(ids);
+			else if (g.tap) this.selection.contextMenu(g.clientX, g.clientY, { x: g.poly[0], y: g.poly[1] }, true);
+		} else if (g.kind === "move" || g.kind === "scale") {
+			this.selection.commitTransform(g.hStart);
 		}
 	};
 
@@ -243,6 +305,10 @@ export class PointerPipeline {
 			}
 		} else if (g.kind === "erase" && g.removed.length) {
 			this.onOp({ kind: "erase", removed: g.removed });
+		} else if (g.kind === "lasso") {
+			this.selection.layer.setLasso(null);
+		} else if (g.kind === "move" || g.kind === "scale") {
+			this.selection.commitTransform(g.hStart);
 		}
 	};
 

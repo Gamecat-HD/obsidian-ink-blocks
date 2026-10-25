@@ -8,7 +8,7 @@ import type { InkEntry, InkEvent } from "../store/InkStore";
 import { ExpandModal } from "../ui/ExpandModal";
 import { parseBgLink } from "./bgLink";
 import { InkEditor, type ResolvedBackground } from "./InkEditor";
-import { writeBlockFields } from "./BlockWriter";
+import { insertAfterBlock, writeBlockFields } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
 
 /**
@@ -184,7 +184,15 @@ export class InkBlockChild extends MarkdownRenderChild {
 			setPattern: (change) => this.setPattern(change),
 			background: this.resolveBackground(),
 			ocrTarget: () => target,
+			insertText: (text) => insertAfterBlock(this.plugin.app, target.notePath, path, text, target.hint()),
 		}).open();
+	}
+
+	private insertText(text: string): Promise<boolean> {
+		const path = this.path;
+		if (!path) return Promise.resolve(false);
+		this.releaseFocus();
+		return insertAfterBlock(this.plugin.app, this.ctx.sourcePath, path, text, this.ctx.getSectionInfo(this.containerEl)?.lineStart);
 	}
 
 	/**
@@ -203,7 +211,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 		const mod = e.ctrlKey || e.metaKey;
 		const key = e.key.toLowerCase();
 		let handled = true;
-		if (mod && key === "z" && !e.shiftKey) this.editor?.undo();
+		if (this.editor?.handleKey(e)) handled = true;
+		else if (mod && key === "z" && !e.shiftKey) this.editor?.undo();
 		else if (mod && ((key === "z" && e.shiftKey) || key === "y")) this.editor?.redo();
 		else if (e.key === "Escape") {
 			this.containerEl.removeClass("is-active");
@@ -249,6 +258,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 			commit: () => this.commit(),
 			activate: this.activate,
 			toggleExpand: () => this.expand(),
+			insertText: (text) => this.insertText(text),
 		});
 		this.renderCaption();
 		if (entry.reactivate) {

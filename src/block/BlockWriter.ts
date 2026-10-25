@@ -83,3 +83,27 @@ export async function readBlockField(
 	const found = locateInkFence(text, inkPath, hintLine);
 	return found ? parseBlock(found.fence.body)[key] : null;
 }
+
+/** Text als eigenen Absatz direkt unter dem Block einfügen (Lasso → „Als Text einfügen“). */
+export async function insertAfterBlock(app: App, notePath: string, inkPath: string, text: string, hintLine?: number): Promise<boolean> {
+	const editor = openEditor(app, notePath);
+	if (editor) {
+		const found = locateInkFence(editor.getValue(), inkPath, hintLine);
+		if (!found) return false;
+		const line = found.fence.close;
+		editor.replaceRange(`\n\n${text}`, { line, ch: editor.getLine(line).length });
+		return true;
+	}
+	const file = app.vault.getFileByPath(notePath);
+	if (!file) return false;
+	let done = false;
+	await app.vault.process(file, (data) => {
+		const found = locateInkFence(data, inkPath, hintLine);
+		if (!found) return data;
+		const lines = data.split("\n");
+		lines.splice(found.fence.close + 1, 0, "", text);
+		done = true;
+		return lines.join("\n");
+	});
+	return done;
+}

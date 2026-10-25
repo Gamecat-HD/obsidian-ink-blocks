@@ -1,5 +1,6 @@
 import type { TFile } from "obsidian";
 import { PointerPipeline } from "../input/PointerPipeline";
+import { Selection } from "../input/Selection";
 import type InkBlocksPlugin from "../main";
 import { opBounds, type InkOp } from "../model/ops";
 import { PageBackground } from "../render/background";
@@ -22,6 +23,8 @@ export interface InkEditorHost {
 	/** Ausklappen bzw. (in der ausgeklappten Ansicht) wieder einklappen. */
 	toggleExpand?(): void;
 	expanded?: boolean;
+	/** Lasso → „Als Text einfügen“: Absatz unter den Block in der Notiz schreiben. */
+	insertText?(text: string): Promise<boolean>;
 }
 
 /**
@@ -32,6 +35,7 @@ export class InkEditor {
 	readonly toolbar: Toolbar;
 	readonly surface: Surface;
 	readonly pipeline: PointerPipeline;
+	readonly selection: Selection;
 	private background: PageBackground | null = null;
 
 	constructor(
@@ -55,7 +59,14 @@ export class InkEditor {
 		this.surface = new Surface(container, entry.doc, host.pattern());
 		this.surface.el.dataset.path = entry.path;
 		this.surface.el.tabIndex = -1;
-		this.pipeline = new PointerPipeline(plugin, entry, this.surface, this.onOp, () => host.activate());
+		this.selection = new Selection({
+			plugin,
+			entry,
+			surface: this.surface,
+			onOp: this.onOp,
+			insertText: host.insertText ? (text) => host.insertText?.(text) ?? Promise.resolve(false) : undefined,
+		});
+		this.pipeline = new PointerPipeline(plugin, entry, this.surface, this.selection, this.onOp, () => host.activate());
 		plugin.editors.add(this);
 		this.setupBackground();
 	}
@@ -77,6 +88,7 @@ export class InkEditor {
 		this.host.plugin.editors.delete(this);
 		this.background?.destroy();
 		this.pipeline.destroy();
+		this.selection.destroy();
 		this.surface.destroy();
 		this.toolbar.destroy();
 	}
@@ -84,7 +96,40 @@ export class InkEditor {
 	/** Dokument neu geladen (Sync) oder in einer anderen Ansicht geändert. */
 	setDoc() {
 		this.surface.setDoc(this.host.entry.doc);
+		this.selection.validate();
 		this.toolbar.update();
+	}
+
+	/** Werkzeug gewechselt (in irgendeiner Leiste): Auswahl gilt nur fürs Lasso. */
+	toolsChanged() {
+		if (this.host.plugin.settings.tools.tool !== "lasso") this.selection.clear();
+		this.toolbar.update();
+	}
+
+	/**
+	 * Tastenkürzel der Auswahl (Block bzw. ausgeklappte Ansicht). `true` = erledigt, nicht an den Editor
+	 * weiterreichen.
+	 */
+	handleKey(e: KeyboardEvent): boolean {
+		const sel = this.selection;
+		const mod = e.ctrlKey || e.metaKey;
+		const key = e.key.toLowerCase();
+		if (mod && key === "v") return sel.pasteClipboard();
+		if (mod && key === "a") {
+			sel.selectAll();
+			return true;
+		}
+		if (!sel.active) return false;
+		const step = e.shiftKey ? 20 : 2;
+		const arrows: Record<string, [number, number]> = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] };
+		if (key === "delete" || key === "backspace") sel.delete();
+		else if (mod && key === "c") sel.copy();
+		else if (mod && key === "x") sel.cut();
+		else if (mod && key === "d") sel.duplicate();
+		else if (key === "escape") sel.clear();
+		else if (!mod && arrows[key]) sel.nudge(...arrows[key]);
+		else return false;
+		return true;
 	}
 
 	refresh() {
@@ -94,12 +139,14 @@ export class InkEditor {
 	}
 
 	undo() {
+		this.selection.clear();
 		const { entry } = this.host;
 		const op = entry.history.undo(entry.doc);
 		if (op) this.afterHistory(op);
 	}
 
 	redo() {
+		this.selection.clear();
 		const { entry } = this.host;
 		const op = entry.history.redo(entry.doc);
 		if (op) this.afterHistory(op);

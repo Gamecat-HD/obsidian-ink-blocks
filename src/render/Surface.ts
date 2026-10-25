@@ -40,6 +40,8 @@ export class Surface {
 	/** Der gerade entstehende Strich – wird bei jedem Neuzeichnen einer Kachel mitgemalt. */
 	private live: LiveStroke | null = null;
 	private tiles: TileState[] = [];
+	/** Angehobene Striche (Lasso-Auswahl) – die Auswahl-Ebene zeigt sie, die Kacheln nicht. */
+	private hidden = new Set<string>();
 	private scale = 1;
 	private cssWidth = 0;
 	private dpr = window.devicePixelRatio || 1;
@@ -68,6 +70,17 @@ export class Surface {
 
 	get docScale() {
 		return this.scale;
+	}
+
+	get data(): InkData {
+		return this.doc;
+	}
+
+	/** Striche aus den Kacheln nehmen bzw. zurückholen (nur die betroffenen Bereiche werden neu gemalt). */
+	setHidden(ids: Set<string>) {
+		const changed = this.doc.strokes.filter((s) => ids.has(s.id) !== this.hidden.has(s.id));
+		this.hidden = new Set(ids);
+		if (changed.length) this.redraw(changed.map(strokeBounds));
 	}
 
 	destroy() {
@@ -197,7 +210,7 @@ export class Surface {
 		}
 	}
 
-	private color(index: number): string {
+	color(index: number): string {
 		if (index !== 0) return resolveColor(index, this.doc.space, this.el);
 		if (!this.inkColor) this.inkColor = resolveColor(0, this.doc.space, this.el);
 		return this.inkColor;
@@ -233,6 +246,7 @@ export class Surface {
 			bottom = Math.min(bottom, region.maxY);
 		}
 		const inRegion = this.doc.strokes.filter((s) => {
+			if (this.hidden.has(s.id)) return false;
 			const b = strokeBounds(s);
 			if (b.maxY < top || b.minY > bottom) return false;
 			return !region || (b.maxX >= region.minX && b.minX <= region.maxX);

@@ -25,6 +25,7 @@ const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 	{ id: "pen", icon: "pencil", label: "Stift" },
 	{ id: "hl", icon: "highlighter", label: "Textmarker" },
 	{ id: "eraser", icon: "eraser", label: "Radierer" },
+	{ id: "lasso", icon: "lasso", label: "Lasso: auswählen, verschieben, kopieren" },
 ];
 
 const BG_ICON: Record<BgStyle, { icon: string; label: string }> = {
@@ -139,6 +140,7 @@ export class Toolbar {
 		const width = hl ? t.hlWidth : t.penWidth;
 		this.widths.forEach((btn, i) => btn.toggleClass("is-active", i === width));
 		this.bar.toggleClass("is-eraser", t.tool === "eraser");
+		this.bar.toggleClass("is-lasso", t.tool === "lasso");
 
 		this.undoBtn.toggleClass("is-disabled", !this.actions.canUndo());
 		this.redoBtn.toggleClass("is-disabled", !this.actions.canRedo());
@@ -179,7 +181,7 @@ export class Toolbar {
 		if (t.tool === "hl") t.hlColor = HL_COLORS[i];
 		else {
 			t.penColor = PEN_COLORS[i];
-			if (t.tool === "eraser") t.tool = "pen";
+			if (t.tool === "eraser" || t.tool === "lasso") t.tool = "pen";
 		}
 		this.plugin.toolsChanged();
 	}
@@ -243,7 +245,7 @@ export class Toolbar {
 		if (t.tool === "hl") t.hlWidth = w;
 		else {
 			t.penWidth = w;
-			if (t.tool === "eraser") t.tool = "pen";
+			if (t.tool === "eraser" || t.tool === "lasso") t.tool = "pen";
 		}
 		this.plugin.toolsChanged();
 	}

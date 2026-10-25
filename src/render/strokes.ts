@@ -42,11 +42,26 @@ function triples(points: number[]): number[][] {
 	return out;
 }
 
+export function outlineSvg(points: number[], style: StrokeStyle, last: boolean): string {
+	return svgPathFromOutline(getStroke(triples(points), strokeOptions(style, last)));
+}
+
 export function outlinePath(points: number[], style: StrokeStyle, last: boolean): Path2D {
-	return new Path2D(svgPathFromOutline(getStroke(triples(points), strokeOptions(style, last))));
+	return new Path2D(outlineSvg(points, style, last));
 }
 
 const pathCache = new WeakMap<Stroke, Path2D>();
+const svgCache = new WeakMap<Stroke, string>();
+
+/** SVG-Pfad (`d`) in Doc-Einheiten – für die Auswahl-Ebene und den Export. */
+export function strokeSvg(stroke: Stroke): string {
+	let d = svgCache.get(stroke);
+	if (d === undefined) {
+		d = outlineSvg(stroke.points, stroke, true);
+		svgCache.set(stroke, d);
+	}
+	return d;
+}
 
 /** Path2D in Doc-Einheiten – Striche sind unveränderlich, daher pro Objekt gecacht. */
 export function strokePath(stroke: Stroke): Path2D {

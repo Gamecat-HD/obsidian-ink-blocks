@@ -1,7 +1,7 @@
 import type { EngineId } from "./ocr/models";
 import type { BgStyle } from "./model/pattern";
 
-export type ToolId = "pen" | "hl" | "eraser";
+export type ToolId = "pen" | "hl" | "eraser" | "lasso";
 /** Breiten-Slot: 0 = fein, 1 = mittel, 2 = breit. */
 export type WidthSlot = 0 | 1 | 2;
 export type WidthSizes = [number, number, number];
