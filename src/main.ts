@@ -7,7 +7,7 @@ import { OcrService } from "./ocr/OcrService";
 import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
 import { InkSettingTab, normalizeSettings, type InkSettings } from "./settings";
-import { InkStore } from "./store/InkStore";
+import { InkStore, type InkEntry } from "./store/InkStore";
 
 export default class InkBlocksPlugin extends Plugin {
 	declare settings: InkSettings;
@@ -74,6 +74,15 @@ export default class InkBlocksPlugin extends Plugin {
 		// Über alle Ansichten, auch die ausgeklappte (die gehört zu keinem Block).
 		for (const editor of this.editors) editor.toolsChanged();
 		this.saveSoon();
+	}
+
+	/** Abdeckbänder einer Datei auf-/zugedeckt: alle Ansichten dieser Datei. */
+	refreshTape(entry: InkEntry) {
+		for (const editor of this.editors) {
+			if (editor.entry !== entry) continue;
+			editor.surface.renderTape();
+			editor.toolbar.update();
+		}
 	}
 
 	/** Alle sichtbaren Blöcke neu zeichnen (z. B. nach Theme- oder Einstellungswechsel). */

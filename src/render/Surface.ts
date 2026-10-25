@@ -1,7 +1,7 @@
 import type { InkData } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
 import type { Pattern } from "../model/pattern";
-import { HL_ALPHA, resolveColor, strokePath } from "./strokes";
+import { HL_ALPHA, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
 import { scaleFor, tileLayout, tilesForBounds, type Tile } from "./transform";
 
 interface TileState {
@@ -17,7 +17,12 @@ export interface LiveStroke {
 	bounds: Bounds;
 	color: number;
 	highlighter: boolean;
+	/** Abdeckband: SVG-Pfad – landet in der Band-Ebene statt auf den Kacheln. */
+	tape?: string;
 }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+let tapeIds = 0;
 
 /**
  * Zeichenfläche eines Blocks:
@@ -42,6 +47,16 @@ export class Surface {
 	private tiles: TileState[] = [];
 	/** Angehobene Striche (Lasso-Auswahl) – die Auswahl-Ebene zeigt sie, die Kacheln nicht. */
 	private hidden = new Set<string>();
+	/** Aufgedeckte Abdeckbänder (gehört dem Store-Eintrag, alle Ansichten teilen ihn). */
+	revealed: ReadonlySet<string> = new Set();
+	/**
+	 * Abdeckbänder liegen in einer eigenen SVG-Ebene über den Kacheln: Auf Arbeitsblättern werden die
+	 * Kacheln multipliziert – ein Band dort würde gedruckten Text nicht verdecken.
+	 */
+	private readonly tapeSvg: SVGSVGElement;
+	private readonly tapeGroup: SVGGElement;
+	private readonly tapeLive: SVGGElement;
+	private readonly stripesId = `ink-tape-stripes-${++tapeIds}`;
 	private scale = 1;
 	private cssWidth = 0;
 	private dpr = window.devicePixelRatio || 1;
@@ -58,6 +73,14 @@ export class Surface {
 		this.el = parent.createDiv({ cls: "ink-surface" });
 		this.bgEl = this.el.createDiv({ cls: "ink-bg" });
 		this.tilesEl = this.el.createDiv({ cls: "ink-tiles" });
+		this.tapeSvg = this.el.appendChild(document.createElementNS(SVG_NS, "svg"));
+		this.tapeSvg.classList.add("ink-tape-layer");
+		this.tapeSvg.setAttribute("preserveAspectRatio", "none");
+		this.tapeSvg.innerHTML =
+			`<defs><pattern id="${this.stripesId}" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+			`<rect width="5" height="14" fill="#fff" fill-opacity="0.22"/></pattern></defs>`;
+		this.tapeGroup = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
+		this.tapeLive = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
 
 		this.io = new IntersectionObserver((entries) => this.onIntersect(entries), { rootMargin: "600px 0px" });
 		this.ro = new ResizeObserver(() => {
@@ -120,6 +143,32 @@ export class Surface {
 		this.el.dataset.space = this.doc.space;
 		this.el.style.aspectRatio = `${this.doc.w} / ${this.doc.h}`;
 		this.el.dataset.strokes = String(this.doc.strokes.length);
+		this.tapeSvg.setAttribute("viewBox", `0 0 ${this.doc.w} ${this.doc.h}`);
+		this.renderTape();
+	}
+
+	/** Band-Ebene neu aufbauen (wenige Elemente – billiger als Buchführung über Änderungen). */
+	renderTape() {
+		const tapes = this.doc.strokes.filter((s) => s.tool === "tape" && !this.hidden.has(s.id));
+		this.tapeGroup.replaceChildren(...tapes.map((s) => this.tapeElement(strokeSvg(s), s.color, this.revealed.has(s.id), s.id)));
+		this.el.dataset.tapes = String(tapes.length);
+	}
+
+	private tapeElement(d: string, color: number, revealed: boolean, id?: string): SVGGElement {
+		const g = document.createElementNS(SVG_NS, "g");
+		g.classList.add("ink-tape");
+		if (id) g.dataset.id = id;
+		if (revealed) {
+			g.classList.add("is-revealed");
+			g.setAttribute("opacity", String(TAPE_REVEALED_ALPHA));
+		}
+		const fill = g.appendChild(document.createElementNS(SVG_NS, "path"));
+		fill.setAttribute("d", d);
+		fill.setAttribute("fill", this.color(color));
+		const stripes = g.appendChild(document.createElementNS(SVG_NS, "path"));
+		stripes.setAttribute("d", d);
+		stripes.setAttribute("fill", `url(#${this.stripesId})`);
+		return g;
 	}
 
 	/** Neu-Layout bei Größenänderung. Bei gleicher Breite bleiben unveränderte Kacheln erhalten (Wachsen). */
@@ -188,6 +237,7 @@ export class Surface {
 	}
 
 	redraw(bounds: Bounds[]) {
+		this.tapeLive.replaceChildren();
 		this.updateSize();
 		// Reste eines Live-Strichs (dessen Umriss weicht leicht vom fertigen ab) mit übermalen.
 		if (this.liveBounds) {
@@ -246,7 +296,7 @@ export class Surface {
 			bottom = Math.min(bottom, region.maxY);
 		}
 		const inRegion = this.doc.strokes.filter((s) => {
-			if (this.hidden.has(s.id)) return false;
+			if (this.hidden.has(s.id) || s.tool === "tape") return false;
 			const b = strokeBounds(s);
 			if (b.maxY < top || b.minY > bottom) return false;
 			return !region || (b.maxX >= region.minX && b.minX <= region.maxX);
@@ -276,6 +326,10 @@ export class Surface {
 
 	/** Strich während des Zeichnens auf die Kacheln malen (synchron, ohne eigenen Canvas). */
 	drawLive(live: LiveStroke) {
+		if (live.tape !== undefined) {
+			this.tapeLive.replaceChildren(this.tapeElement(live.tape, live.color, false));
+			return;
+		}
 		const dirty = this.liveBounds ? union(this.liveBounds, live.bounds) : live.bounds;
 		this.liveBounds = live.bounds;
 		this.live = live;
@@ -284,6 +338,7 @@ export class Surface {
 
 	/** Live-Strich wieder entfernen (Abbruch). Nach dem Absetzen übermalt `redraw` den Bereich ohnehin. */
 	clearLive() {
+		this.tapeLive.replaceChildren();
 		this.live = null;
 		if (!this.liveBounds) return;
 		const dirty = this.liveBounds;

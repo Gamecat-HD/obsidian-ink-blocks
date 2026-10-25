@@ -1,6 +1,7 @@
 import { getStroke, type StrokeOptions } from "perfect-freehand";
 import type { Space, Stroke, Tool } from "../model/ink-format";
 import { svgPathFromOutline } from "./svgPath";
+import { tapeSvg } from "./tape";
 
 /**
  * Palette: 0–2 Stift (0 = Tinte), ab 3 Textmarker. Indizes stehen in den .ink-Dateien – neue Farben nur
@@ -10,6 +11,12 @@ export const PALETTE = ["ink", "#1c7ed6", "#e03131", "#fab005", "#40c057", "#f06
 export const PEN_COLORS = [0, 1, 2];
 export const HL_COLORS = [3, 4, 5, 6, 7, 8];
 export const HL_ALPHA = 0.35;
+/** Abdeckband: dieselben Farben wie der Textmarker, aber deckend. */
+export const TAPE_COLORS = HL_COLORS;
+/** Bandbreiten der drei Slots (Doc-Einheiten): eine Zeile, eine Zeile mit Luft, zwei Zeilen. */
+export const TAPE_SIZES: [number, number, number] = [36, 50, 84];
+/** Aufgedecktes Band: nur noch angedeutet. */
+export const TAPE_REVEALED_ALPHA = 0.16;
 
 interface StrokeStyle {
 	tool: Tool;
@@ -43,6 +50,7 @@ function triples(points: number[]): number[][] {
 }
 
 export function outlineSvg(points: number[], style: StrokeStyle, last: boolean): string {
+	if (style.tool === "tape") return tapeSvg(points, style.size);
 	return svgPathFromOutline(getStroke(triples(points), strokeOptions(style, last)));
 }
 

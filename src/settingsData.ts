@@ -1,7 +1,7 @@
 import type { EngineId } from "./ocr/models";
 import type { BgStyle } from "./model/pattern";
 
-export type ToolId = "pen" | "hl" | "eraser" | "lasso";
+export type ToolId = "pen" | "hl" | "tape" | "eraser" | "lasso";
 /** Breiten-Slot: 0 = fein, 1 = mittel, 2 = breit. */
 export type WidthSlot = 0 | 1 | 2;
 export type WidthSizes = [number, number, number];
@@ -15,6 +15,8 @@ export interface ToolState {
 	penWidth: WidthSlot;
 	hlWidth: WidthSlot;
 	eraserWidth: WidthSlot;
+	tapeColor: number;
+	tapeWidth: WidthSlot;
 }
 
 /** Radierer: ganze Striche entfernen oder nur die berührten Stellen (Striche werden geteilt). */
@@ -75,7 +77,7 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	barrelErases: true,
 	eraserMode: "stroke",
 	eraseHlOnly: false,
-	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0, eraserWidth: 1 },
+	tools: { tool: "pen", penColor: 0, hlColor: 3, penWidth: 0, hlWidth: 0, eraserWidth: 1, tapeColor: 6, tapeWidth: 0 },
 	ocrEnabled: true,
 	ocrDelay: 10,
 	ocrEngine: "auto",
@@ -116,6 +118,7 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	settings.tools.penWidth = slot(settings.tools.penWidth);
 	settings.tools.hlWidth = slot(settings.tools.hlWidth);
 	settings.tools.eraserWidth = raw.tools?.eraserWidth === undefined ? d.tools.eraserWidth : slot(settings.tools.eraserWidth);
+	settings.tools.tapeWidth = slot(settings.tools.tapeWidth);
 	if (settings.eraserMode !== "precise") settings.eraserMode = "stroke";
 	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
 	return settings;

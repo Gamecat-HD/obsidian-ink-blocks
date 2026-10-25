@@ -94,7 +94,8 @@ export class SelectionLayer {
 	setStrokes(strokes: Stroke[]) {
 		this.group.replaceChildren();
 		// Wie auf den Kacheln: Textmarker unter den Stiften.
-		const ordered = [...strokes.filter((s) => s.tool === "hl"), ...strokes.filter((s) => s.tool !== "hl")];
+		const rank = (s: Stroke) => (s.tool === "hl" ? 0 : s.tool === "tape" ? 2 : 1);
+		const ordered = [...strokes].sort((a, b) => rank(a) - rank(b));
 		for (const s of ordered) {
 			const path = this.group.appendChild(document.createElementNS(SVG_NS, "path"));
 			path.setAttribute("d", strokeSvg(s));

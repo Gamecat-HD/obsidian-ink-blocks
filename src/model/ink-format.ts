@@ -6,7 +6,8 @@
  * Jeder Strich steht in einer eigenen Zeile, damit Diffs und LiveSync-Chunks klein bleiben.
  */
 
-export type Tool = "pen" | "hl";
+/** Stift, Textmarker, Abdeckband (deckend, zum Lernen per Tippen aufdeckbar). */
+export type Tool = "pen" | "hl" | "tape";
 export type Space = "nb" | "page";
 
 export interface Stroke {
@@ -141,7 +142,7 @@ export function decodeInk(text: string): InkData {
 	if (!Array.isArray(raw.strokes)) throw new InkFormatError("strokes fehlt");
 
 	const strokes = (raw.strokes as StoredStroke[]).map((s, i) => {
-		if (typeof s?.id !== "string" || (s.t !== "pen" && s.t !== "hl") || !isNum(s.c) || !isNum(s.s)) {
+		if (typeof s?.id !== "string" || (s.t !== "pen" && s.t !== "hl" && s.t !== "tape") || !isNum(s.c) || !isNum(s.s)) {
 			throw new InkFormatError(`Strich ${i} ungültig`);
 		}
 		if (!Array.isArray(s.p) || s.p.length % 3 !== 0 || !s.p.every(isNum)) {

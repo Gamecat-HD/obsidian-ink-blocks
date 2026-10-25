@@ -3,7 +3,8 @@ import type { Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, replaceOp, strokeBounds, type Bounds, type InkOp } from "../model/ops";
 import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
-import { outlinePath } from "../render/strokes";
+import { outlinePath, TAPE_SIZES } from "../render/strokes";
+import { tapeHit, tapeSvg } from "../render/tape";
 import type { Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
@@ -61,7 +62,8 @@ type Gesture =
 			snapshot: Stroke[];
 			pieces: Map<string, Stroke>;
 	  }
-	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null }
+	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null; x0: number; y0: number; t0: number }
+	| { kind: "tap"; pointerId: number; pointerType: string; tapeId: string; x: number; y: number; clientX: number; clientY: number; pressure: number }
 	| { kind: "lasso"; pointerId: number; poly: number[]; clientX: number; clientY: number; tap: boolean }
 	| { kind: "move"; pointerId: number; x0: number; y0: number; hStart: number }
 	| { kind: "scale"; pointerId: number; ox: number; oy: number; d0: number; hStart: number };
@@ -135,7 +137,7 @@ export class PointerPipeline {
 			const onSelection = this.selection.hitFrame(at.x, at.y);
 			if (settings.penOnly && !onSelection) {
 				this.capture(e, false);
-				this.gesture = { kind: "scroll", pointerId: e.pointerId, lastY: e.clientY, scroller: this.scroller() };
+				this.gesture = { kind: "scroll", pointerId: e.pointerId, lastY: e.clientY, scroller: this.scroller(), x0: e.clientX, y0: e.clientY, t0: now };
 				return;
 			}
 		} else if (e.pointerType === "mouse") {
@@ -194,27 +196,58 @@ export class PointerPipeline {
 			return;
 		}
 
+		// Tippen aufs Abdeckband deckt auf bzw. zu; wird daraus ein Strich, wird ganz normal gezeichnet.
+		const tapeId = this.tapeAt(x, y);
+		if (tapeId) {
+			this.gesture = { kind: "tap", pointerId: e.pointerId, pointerType: e.pointerType, tapeId, x, y, clientX: e.clientX, clientY: e.clientY, pressure: e.pressure };
+			return;
+		}
+		this.beginDraw(e.pointerId, e.pointerType, x, y, e.pressure);
+	};
+
+	private beginDraw(pointerId: number, pointerType: string, x: number, y: number, pressure: number) {
+		const settings = this.plugin.settings;
+		const tools = settings.tools;
 		const hl = tools.tool === "hl";
-		const simulated = e.pointerType !== "pen";
+		const tape = tools.tool === "tape";
+		const simulated = pointerType !== "pen";
 		this.gesture = {
 			kind: "draw",
-			pointerId: e.pointerId,
-			tool: hl ? "hl" : "pen",
-			color: hl ? tools.hlColor : tools.penColor,
-			size: hl ? settings.hlSizes[tools.hlWidth] : settings.penSizes[tools.penWidth],
+			pointerId,
+			tool: hl ? "hl" : tape ? "tape" : "pen",
+			color: hl ? tools.hlColor : tape ? tools.tapeColor : tools.penColor,
+			size: hl ? settings.hlSizes[tools.hlWidth] : tape ? TAPE_SIZES[tools.tapeWidth] : settings.penSizes[tools.penWidth],
 			simulated,
-			straight: hl && settings.hlStraight,
+			// Das Band ist immer gerade (wie mit dem Lineal gezogen).
+			straight: (hl && settings.hlStraight) || tape,
 			x0: x,
 			y0: y,
 			shape: false,
 			holdX: x,
 			holdY: y,
-			points: [x, y, simulated ? 0.5 : e.pressure],
+			points: [x, y, simulated ? 0.5 : pressure],
 			hStart: this.entry.doc.h,
 		};
 		this.armHold(x, y);
 		this.renderLive();
-	};
+	}
+
+	/** Oberstes Abdeckband unter (x, y), aufgedeckt oder nicht. */
+	private tapeAt(x: number, y: number): string | null {
+		const strokes = this.entry.doc.strokes;
+		for (let i = strokes.length - 1; i >= 0; i--) {
+			const s = strokes[i];
+			if (s.tool === "tape" && !this.selection.selectedIds.has(s.id) && tapeHit(s.points, s.size, x, y)) return s.id;
+		}
+		return null;
+	}
+
+	/** Band auf- bzw. zudecken – in allen Ansichten dieser Datei. */
+	private toggleTape(id: string) {
+		const revealed = this.entry.revealed;
+		if (!revealed.delete(id)) revealed.add(id);
+		this.plugin.refreshTape(this.entry);
+	}
 
 	private readonly onMove = (e: PointerEvent) => {
 		const g = this.gesture;
@@ -229,6 +262,12 @@ export class PointerPipeline {
 		if (g.kind === "scroll") {
 			if (g.scroller) g.scroller.scrollTop -= e.clientY - g.lastY;
 			g.lastY = e.clientY;
+			return;
+		}
+		if (g.kind === "tap") {
+			if (Math.hypot(e.clientX - g.clientX, e.clientY - g.clientY) <= TAP_PX) return;
+			this.beginDraw(g.pointerId, g.pointerType, g.x, g.y, g.pressure);
+			this.onMove(e);
 			return;
 		}
 
@@ -294,7 +333,16 @@ export class PointerPipeline {
 		window.clearTimeout(this.holdTimer);
 		this.setDrawing(false);
 
-		if (g.kind === "draw") {
+		if (g.kind === "tap") {
+			this.toggleTape(g.tapeId);
+		} else if (g.kind === "scroll") {
+			// Finger kurz getippt (ohne zu scrollen): Abdeckband auf-/zudecken.
+			if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) <= TAP_PX && performance.now() - g.t0 < 500) {
+				const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+				const id = this.tapeAt(x, y);
+				if (id) this.toggleTape(id);
+			}
+		} else if (g.kind === "draw") {
 			const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
 			if (g.shape) stroke.shape = true;
 			// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
@@ -399,11 +447,13 @@ export class PointerPipeline {
 	private renderLive() {
 		const g = this.gesture;
 		if (g?.kind !== "draw") return;
+		const tape = g.tool === "tape";
 		this.surface.drawLive({
-			path: outlinePath(g.points, g, false),
+			path: tape ? new Path2D() : outlinePath(g.points, g, false),
 			bounds: pointsBounds(g.points, g.size),
 			color: g.color,
 			highlighter: g.tool === "hl",
+			tape: tape ? tapeSvg(g.points, g.size) : undefined,
 		});
 	}
 

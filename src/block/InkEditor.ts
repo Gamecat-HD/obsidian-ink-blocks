@@ -53,10 +53,23 @@ export class InkEditor {
 			previewGap: (gap) => this.surface.setPattern(gap === null ? host.pattern() : { ...host.pattern(), gap, custom: true }),
 			toggleExpand: host.toggleExpand ? () => host.toggleExpand?.() : undefined,
 			expanded: !!host.expanded,
+			tapeState: () => {
+				const tapes = entry.doc.strokes.filter((s) => s.tool === "tape");
+				if (!tapes.length) return "none";
+				return tapes.every((s) => entry.revealed.has(s.id)) ? "revealed" : "covered";
+			},
+			toggleAllTape: () => {
+				const tapes = entry.doc.strokes.filter((s) => s.tool === "tape");
+				const reveal = tapes.some((s) => !entry.revealed.has(s.id));
+				entry.revealed.clear();
+				if (reveal) for (const s of tapes) entry.revealed.add(s.id);
+				plugin.refreshTape(entry);
+			},
 		});
 		// Klick auf die Leiste aktiviert die Ansicht ebenfalls (Capture: die Leiste stoppt die Propagation).
 		this.toolbar.el.addEventListener("pointerdown", () => host.activate(), { capture: true });
 		this.surface = new Surface(container, entry.doc, host.pattern());
+		this.surface.revealed = entry.revealed;
 		this.surface.el.dataset.path = entry.path;
 		this.surface.el.tabIndex = -1;
 		this.selection = new Selection({

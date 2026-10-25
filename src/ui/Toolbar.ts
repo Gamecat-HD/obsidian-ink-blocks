@@ -1,7 +1,7 @@
 import { Menu, setIcon, setTooltip } from "obsidian";
 import type InkBlocksPlugin from "../main";
 import { defaultGap, GAP_PRESETS, type BgStyle, type Pattern, type PatternChange } from "../model/pattern";
-import { HL_COLORS, PALETTE, PEN_COLORS } from "../render/strokes";
+import { HL_COLORS, PALETTE, PEN_COLORS, TAPE_COLORS } from "../render/strokes";
 import type { ToolId, WidthSlot } from "../settings";
 import { GapPopover } from "./GapPopover";
 
@@ -19,11 +19,15 @@ export interface ToolbarActions {
 	toggleExpand?: () => void;
 	/** Leiste gehört zur ausgeklappten Ansicht. */
 	expanded?: boolean;
+	/** Abdeckbänder im Dokument: keine, mindestens eins zugedeckt, alle aufgedeckt. */
+	tapeState(): "none" | "covered" | "revealed";
+	toggleAllTape(): void;
 }
 
 const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 	{ id: "pen", icon: "pencil", label: "Stift" },
 	{ id: "hl", icon: "highlighter", label: "Textmarker" },
+	{ id: "tape", icon: "bandage", label: "Abdeckband: Antworten abdecken, Tippen deckt auf" },
 	{ id: "eraser", icon: "eraser", label: "Radierer (nochmal tippen: Optionen)" },
 	{ id: "lasso", icon: "lasso", label: "Lasso: auswählen, verschieben, kopieren" },
 ];
@@ -54,6 +58,7 @@ export class Toolbar {
 	private readonly redoBtn: HTMLElement;
 	private readonly bgBtn: HTMLElement;
 	private readonly straightBtn: HTMLElement;
+	private readonly tapeBtn: HTMLElement;
 
 	constructor(
 		parent: HTMLElement,
@@ -103,6 +108,8 @@ export class Toolbar {
 		this.undoBtn = this.button(edit, "undo-2", "Rückgängig (Strg+Z)", () => actions.undo());
 		this.redoBtn = this.button(edit, "redo-2", "Wiederholen (Strg+Umschalt+Z)", () => actions.redo());
 		this.bgBtn = this.button(edit, "align-justify", "Hintergrund und Zeilenabstand", () => this.showPatternMenu());
+		this.tapeBtn = this.button(edit, "eye", "Alle Abdeckbänder aufdecken", () => actions.toggleAllTape());
+		this.tapeBtn.addClass("ink-tb-tape-toggle");
 		if (actions.toggleExpand) {
 			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
 			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
@@ -122,8 +129,9 @@ export class Toolbar {
 		for (const [id, btn] of this.toolButtons) btn.toggleClass("is-active", id === t.tool);
 
 		const hl = t.tool === "hl";
-		const palette = hl ? HL_COLORS : PEN_COLORS;
-		const current = hl ? t.hlColor : t.penColor;
+		const tape = t.tool === "tape";
+		const palette = hl ? HL_COLORS : tape ? TAPE_COLORS : PEN_COLORS;
+		const current = hl ? t.hlColor : tape ? t.tapeColor : t.penColor;
 		const pattern = this.actions.pattern();
 		const ink = pattern === null ? "#111" : "var(--text-normal)";
 		this.straightBtn.toggle(hl);
@@ -137,7 +145,7 @@ export class Toolbar {
 			sw.dataset.color = String(index);
 			setTooltip(sw, `Farbe ${i + 1}`);
 		});
-		const width = hl ? t.hlWidth : t.tool === "eraser" ? t.eraserWidth : t.penWidth;
+		const width = hl ? t.hlWidth : tape ? t.tapeWidth : t.tool === "eraser" ? t.eraserWidth : t.penWidth;
 		this.widths.forEach((btn, i) => btn.toggleClass("is-active", i === width));
 		this.bar.toggleClass("is-eraser", t.tool === "eraser");
 		const eraser = this.toolButtons.get("eraser");
@@ -147,6 +155,12 @@ export class Toolbar {
 
 		this.undoBtn.toggleClass("is-disabled", !this.actions.canUndo());
 		this.redoBtn.toggleClass("is-disabled", !this.actions.canRedo());
+		const tapeState = this.actions.tapeState();
+		this.tapeBtn.toggle(tapeState !== "none");
+		const revealed = tapeState === "revealed";
+		setIcon(this.tapeBtn, revealed ? "eye-off" : "eye");
+		setTooltip(this.tapeBtn, revealed ? "Alle Abdeckbänder wieder zudecken" : "Alle Abdeckbänder aufdecken");
+		this.tapeBtn.toggleClass("is-active", revealed);
 		this.bgBtn.toggle(pattern !== null);
 		if (pattern) {
 			setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
@@ -206,6 +220,7 @@ export class Toolbar {
 	private setColor(i: number) {
 		const t = this.plugin.settings.tools;
 		if (t.tool === "hl") t.hlColor = HL_COLORS[i];
+		else if (t.tool === "tape") t.tapeColor = TAPE_COLORS[i];
 		else {
 			t.penColor = PEN_COLORS[i];
 			if (t.tool === "eraser" || t.tool === "lasso") t.tool = "pen";
@@ -270,6 +285,7 @@ export class Toolbar {
 	private setWidth(w: WidthSlot) {
 		const t = this.plugin.settings.tools;
 		if (t.tool === "hl") t.hlWidth = w;
+		else if (t.tool === "tape") t.tapeWidth = w;
 		else if (t.tool === "eraser") t.eraserWidth = w;
 		else {
 			t.penWidth = w;
