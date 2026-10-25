@@ -1,4 +1,5 @@
-import type { TFile } from "obsidian";
+import { Notice, type TFile } from "obsidian";
+import type { Pinch } from "../input/MultiTouch";
 import { PointerPipeline } from "../input/PointerPipeline";
 import { Selection } from "../input/Selection";
 import type InkBlocksPlugin from "../main";
@@ -25,6 +26,9 @@ export interface InkEditorHost {
 	expanded?: boolean;
 	/** Lasso → „Als Text einfügen“: Absatz unter den Block in der Notiz schreiben. */
 	insertText?(text: string): Promise<boolean>;
+	/** Zwei Finger: zoomen/verschieben (nur die ausgeklappte Ansicht). */
+	pinch?(p: Pinch): void;
+	pinchEnd?(): void;
 }
 
 /**
@@ -79,7 +83,12 @@ export class InkEditor {
 			onOp: this.onOp,
 			insertText: host.insertText ? (text) => host.insertText?.(text) ?? Promise.resolve(false) : undefined,
 		});
-		this.pipeline = new PointerPipeline(plugin, entry, this.surface, this.selection, this.onOp, () => host.activate());
+		this.pipeline = new PointerPipeline(plugin, entry, this.surface, this.selection, this.onOp, () => host.activate(), {
+			undo: () => this.gestureHistory("undo"),
+			redo: () => this.gestureHistory("redo"),
+			pinch: host.pinch ? (p) => host.pinch?.(p) : undefined,
+			pinchEnd: host.pinchEnd ? () => host.pinchEnd?.() : undefined,
+		});
 		plugin.editors.add(this);
 		this.setupBackground();
 	}
@@ -163,6 +172,16 @@ export class InkEditor {
 		const { entry } = this.host;
 		const op = entry.history.redo(entry.doc);
 		if (op) this.afterHistory(op);
+	}
+
+	/** Zwei- bzw. Drei-Finger-Tipp: mit kurzer Rückmeldung, denn auf dem Tablet sieht man die Tasten nicht. */
+	private gestureHistory(what: "undo" | "redo") {
+		const { history } = this.host.entry;
+		if (what === "undo" ? !history.canUndo : !history.canRedo) return;
+		this.host.activate();
+		if (what === "undo") this.undo();
+		else this.redo();
+		new Notice(what === "undo" ? "Rückgängig" : "Wiederholt", 900);
 	}
 
 	private afterHistory(op: InkOp) {

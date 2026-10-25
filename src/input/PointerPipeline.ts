@@ -10,6 +10,7 @@ import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
 import { ERASER_SIZES } from "../settingsData";
 import { eraserHits, splitStroke } from "./hitTest";
+import { MultiTouch, type Pinch } from "./MultiTouch";
 import type { Selection } from "./Selection";
 
 const BUTTON_BARREL = 2;
@@ -68,12 +69,22 @@ type Gesture =
 	| { kind: "move"; pointerId: number; x0: number; y0: number; hStart: number }
 	| { kind: "scale"; pointerId: number; ox: number; oy: number; d0: number; hStart: number };
 
+export interface PipelineGestures {
+	undo(): void;
+	redo(): void;
+	/** Zwei Finger bewegen (nur wo es Zoom gibt, z. B. in der ausgeklappten Ansicht). */
+	pinch?(p: Pinch): void;
+	pinchEnd?(): void;
+}
+
 /** Übersetzt Pointer-Events auf der Fläche in Striche bzw. Radieren. */
 export class PointerPipeline {
 	private gesture: Gesture | null = null;
 	private penDown = false;
 	private penUntil = 0;
 	private holdTimer = 0;
+	private readonly multi = new MultiTouch();
+	private pinchY: number | null = null;
 
 	constructor(
 		private readonly plugin: InkBlocksPlugin,
@@ -84,6 +95,7 @@ export class PointerPipeline {
 		private readonly onOp: (op: InkOp) => void,
 		/** Wird bei jedem Stift-/Mauskontakt aufgerufen (Block aktivieren, Fokus für Ctrl+Z). */
 		private readonly onActivate: () => void,
+		private readonly gestures: PipelineGestures,
 	) {
 		const el = surface.el;
 		el.addEventListener("pointerdown", this.onDown);
@@ -120,6 +132,8 @@ export class PointerPipeline {
 	private readonly onDown = (e: PointerEvent) => {
 		const settings = this.plugin.settings;
 		const now = performance.now();
+		// Mehrere Finger: Tipp-Gesten bzw. Pinch – aber nicht der Handballen beim Schreiben.
+		if (e.pointerType === "touch" && !this.penDown && now >= this.penUntil && this.touchDown(e, now)) return;
 		const current = this.gesture;
 		if (current) {
 			// Liegt der Handballen schon auf der Fläche (Scroll-Geste), hat der Stift Vorrang.
@@ -250,6 +264,7 @@ export class PointerPipeline {
 	}
 
 	private readonly onMove = (e: PointerEvent) => {
+		if (e.pointerType === "touch" && this.touchMove(e)) return;
 		const g = this.gesture;
 		if (!g) {
 			this.hover(e);
@@ -323,6 +338,7 @@ export class PointerPipeline {
 	};
 
 	private readonly onUp = (e: PointerEvent) => {
+		if (e.pointerType === "touch") this.touchUp(e);
 		const g = this.gesture;
 		if (e.pointerType === "pen" && e.type !== "lostpointercapture") {
 			this.penDown = false;
@@ -366,9 +382,16 @@ export class PointerPipeline {
 
 	private readonly onCancel = (e: PointerEvent) => {
 		if (e.pointerType === "pen") this.penDown = false;
+		if (e.pointerType === "touch") this.touchUp(e);
 		const g = this.gesture;
 		if (!g || g.pointerId !== e.pointerId) return;
+		this.abortGesture(g);
+	};
+
+	/** Geste abbrechen: Strich verwerfen, Radieren/Verschieben dagegen festschreiben (schon sichtbar passiert). */
+	private abortGesture(g: Gesture) {
 		this.gesture = null;
+		if (g.kind === "scroll") return this.abortScroll(g);
 		window.clearTimeout(this.holdTimer);
 		this.setDrawing(false);
 		if (g.kind === "draw") {
@@ -385,7 +408,43 @@ export class PointerPipeline {
 		} else if (g.kind === "move" || g.kind === "scale") {
 			this.selection.commitTransform(g.hStart);
 		}
-	};
+	}
+
+	// ---- Mehrfinger-Gesten ----
+
+	/** Finger aufgesetzt: ab dem zweiten Finger keine Ein-Finger-Geste mehr (Tipp-Gesten, Pinch). */
+	private touchDown(e: PointerEvent, now: number): boolean {
+		this.pinchY = null;
+		if (this.multi.down(e.pointerId, e.clientX, e.clientY, now) < 2) return false;
+		const g = this.gesture;
+		if (g && g.pointerId !== e.pointerId && this.multi.has(g.pointerId)) this.abortGesture(g);
+		this.capture(e, false);
+		return true;
+	}
+
+	private touchMove(e: PointerEvent): boolean {
+		const pinch = this.multi.move(e.pointerId, e.clientX, e.clientY);
+		if (this.multi.count < 2) return false;
+		e.preventDefault();
+		if (!pinch) return true;
+		if (this.gestures.pinch) this.gestures.pinch(pinch);
+		else {
+			// Ohne Zoom (Block in der Notiz): zwei Finger scrollen die Notiz.
+			const scroller = this.scroller();
+			if (scroller && this.pinchY !== null) scroller.scrollTop -= pinch.cy - this.pinchY;
+			this.pinchY = pinch.cy;
+		}
+		return true;
+	}
+
+	private touchUp(e: PointerEvent) {
+		this.pinchY = null;
+		const before = this.multi.count;
+		const action = this.multi.up(e.pointerId, performance.now());
+		if (before === 2) this.gestures.pinchEnd?.();
+		if (action === "undo") this.gestures.undo();
+		else if (action === "redo") this.gestures.redo();
+	}
 
 	private maybeGrow(y: number) {
 		const doc = this.entry.doc;
