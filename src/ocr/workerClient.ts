@@ -1,6 +1,6 @@
 import workerCode from "virtual:ocr-worker";
 import type { HtrConfig } from "./preprocess";
-import type { DecoderSetup, RecognizedSegment, WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
+import type { DecoderSetup, PartnerModel, RecognizedSegment, WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
 
 type Pending = { resolve: (v: RecognizedSegment[] | null) => void; reject: (e: Error) => void };
 type Payload<T extends WorkerRequest["type"]> = Omit<Extract<WorkerRequest, { type: T }>, "id">;
@@ -36,8 +36,8 @@ export class OcrWorker {
 		});
 	}
 
-	async init(wasm: ArrayBuffer, model: ArrayBuffer, config: HtrConfig) {
-		await this.call<"init">({ type: "init", wasm, model, config }, [wasm, model]);
+	async init(wasm: ArrayBuffer, model: ArrayBuffer, config: HtrConfig, partner?: PartnerModel) {
+		await this.call<"init">({ type: "init", wasm, model, config, partner }, partner ? [wasm, model, partner.model] : [wasm, model]);
 	}
 
 	/** Dekoder setzen; das LM wird im Worker gebaut. */

@@ -1,5 +1,5 @@
 import type { HtrConfig } from "./preprocess";
-import type { DecoderSetup, RecognizedSegment, WorkerSegment } from "./protocol";
+import type { DecoderSetup, PartnerModel, RecognizedSegment, WorkerSegment } from "./protocol";
 import { ORT_WASM, TESSERACT, type EngineId, type HtrSpec, type ModelStore } from "./models";
 import { rasterizeSegment } from "./raster";
 import { OcrWorker } from "./workerClient";
@@ -10,6 +10,10 @@ export interface Engine {
 	readonly version: string;
 	recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]>;
 	dispose(): void;
+}
+
+export function partnerKey(partner: { spec: HtrSpec; weight: number } | null): string {
+	return partner ? `+${partner.spec.id}@${partner.spec.model.sha256.slice(0, 8)}x${partner.weight}` : "";
 }
 
 /** Wiederholbares Laden: schlägt es fehl, wird beim nächsten Aufruf neu versucht. */
@@ -38,21 +42,29 @@ export class HtrEngine implements Engine {
 		private readonly spec: HtrSpec,
 		private readonly models: ModelStore,
 		private readonly decoder: DecoderSource | null = null,
+		rasterKey = "",
+		private readonly partner: { spec: HtrSpec; weight: number } | null = null,
 	) {
 		this.id = spec.id;
-		this.version = `${spec.id}@${spec.model.sha256.slice(0, 8)}${decoder ? "+lm" : ""}`;
+		this.partnerKey = partnerKey(partner);
+		this.version = `${spec.id}@${spec.model.sha256.slice(0, 8)}${decoder ? "+lm" : ""}${rasterKey}${this.partnerKey}`;
 	}
 
+	/** Kennung des Zweitmodells (leer = keins) – ändert sie sich, wird die Engine neu gebaut. */
+	readonly partnerKey: string;
+
 	private readonly load = once(async () => {
-		const [wasm, model, configBuf] = await Promise.all([
-			this.models.read(ORT_WASM),
-			this.models.read(this.spec.model),
-			this.models.read(this.spec.config),
-		]);
+		const read = (f: HtrSpec["model"]) => this.models.read(f);
+		const [wasm, model, configBuf] = await Promise.all([read(ORT_WASM), read(this.spec.model), read(this.spec.config)]);
 		const config = JSON.parse(new TextDecoder().decode(configBuf)) as HtrConfig;
+		let partner: PartnerModel | undefined;
+		if (this.partner) {
+			const [pm, pc] = await Promise.all([read(this.partner.spec.model), read(this.partner.spec.config)]);
+			partner = { model: pm, config: JSON.parse(new TextDecoder().decode(pc)) as HtrConfig, weight: this.partner.weight };
+		}
 		const worker = new OcrWorker();
 		try {
-			await worker.init(wasm, model, config);
+			await worker.init(wasm, model, config, partner);
 		} catch (e) {
 			worker.terminate();
 			throw e;
@@ -143,7 +155,7 @@ export class TesseractEngine implements Engine {
 		const results: RecognizedSegment[] = [];
 		for (const seg of segments) {
 			const t0 = performance.now();
-			const { canvas } = rasterizeSegment(seg, TESS_HEIGHT, 4096);
+			const { canvas } = rasterizeSegment(seg, TESS_HEIGHT, 4096).canvases[0];
 			const el = document.createElement("canvas");
 			el.width = canvas.width;
 			el.height = canvas.height;

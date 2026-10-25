@@ -143,4 +143,43 @@ Statt greedy dekodiert der Worker per CTC-Prefix-Beam-Search mit einem Zeichen-6
 
 **E2E** (`m15-decoder`, synthetische Striche aus EMSReadability/EMSAllure, LM aus einer Fachnotiz im Test-Vault): CER 9,9 % → 7,3 %. Beispiele: „Der Roliterleitet Pakete Weiter.“ → „Der Roliter leitet Pakete weiter.“; „Schicht B ist de …“ → „… ist die …“.
 
-**Offen:** Die Messung auf eigener Stiftschrift (OCR-Messnotiz) muss auf dem HP-Gerät laufen. Danach kommen Render-Tuning (Strichstärke/Kernhöhe), Wort-Konfidenz und PP-OCRv6 statt Tesseract.js.
+**Nachtrag 2026-10-25:** Die Messung auf eigener Stiftschrift liegt jetzt vor (siehe nächster Abschnitt). Render-Tuning hat sich als wirkungslos erwiesen.
+
+## Ensemble v2 + v1, fp32, Rauschen (v0.4.1, 2026-10-25)
+
+**Messbasis:**
+- **Eigene Stiftschrift:** 7 Proben (HP 700 Multi Pen, 15 Zeilenstücke, 186 Zeichen) mit Soll-Text in `scripts/bench/real/`. `node scripts/bench/real.mjs --vault <Vault>` lässt die echte Pipeline in der isolierten Obsidian-Instanz laufen. Das LM wird dabei aus den Markdown-Dateien des Vaults gebaut, ohne `.obsidian`, damit LiveSync nicht anläuft.
+- **Fremde Schreiber:** 150 ScaDS-Testzeilen (writer-disjoint). `scripts/bench/scads.mjs` binarisiert und skelettiert sie (Zhang-Suen) und schickt die Skelettpixel als Striche durch dieselbe Rasterung wie Stiftstriche. Damit ist die Domäne „Stiftspur → Zeilenbild“ nachgestellt. Die Absolutwerte liegen höher als auf den Originalscans, weil die echte Strichbreite fehlt; für Vergleiche zwischen Varianten taugt das.
+- Zum Anschauen der Modelleingaben: `scripts/bench/real-images.mjs`.
+
+**Ergebnisse:**
+
+| Variante | eigene Schrift (CER) | ScaDS-Skelett, ohne LM (CER) | Zeit eigene Proben |
+|---|---:|---:|---:|
+| v2 int8 + LM (bisher) | 19,4 % | 14,2 % | 8,8 s |
+| v2 fp32 + LM | 19,4 % | – | 2,4 s |
+| v1 + LM | 16,1 % | 13,3 % | 2,4 s |
+| **v2 fp32 + v1, Rescoring w = 0,7, + LM (neu)** | **16,7 %** | **12,0 %** | 4,0 s |
+| dasselbe, w = 0,5 / 0,6 / 0,8 / 0,9 | 16,7 / 16,1 / 17,2 / – % | 12,4 / 12,2 / 12,2 / 12,3 % | |
+
+Dazu E2E `m15-decoder` (synthetisch): 7,3 % → 5,2 % CER.
+
+**Was das Ensemble macht:** Beide Modelle sehen dasselbe Zeilenbild. Jedes liefert seine 8 besten Kandidaten (Beam + LM). Jeder Kandidat bekommt (1−w)·log P_v2 + w·log P_v1 + α·log P_lm + β·|Text|. P ist dabei die volle CTC-Wahrscheinlichkeit, also die Summe über alle Ausrichtungen (`ctcLogLikelihood`). Das Mischen der Wahrscheinlichkeiten je Zeitschritt wurde verworfen: Die Modelle setzen ihre CTC-Spitzen zu verschiedenen Zeitpunkten, dadurch gingen ganze Zeichen verloren (ohne LM 29,6 % CER, typisch der erste Buchstabe: „ie Übung“). v1 wird auf das v2-Alphabet abgebildet; Zeichen, die nur v1 kennt, fallen weg.
+- Aktiv nur bei Engine „Automatisch“ und wenn v1 geladen ist. v2 wird als fp32 genutzt, sobald `model-fp32.onnx` (40 MB, derselbe Commit) da ist. int8 ist in onnxruntime-web/Wasm 3–4× langsamer und nicht genauer.
+- v1 erkennt die eigene Stiftschrift besser als v2. Vermutlich, weil v2 stärker auf die ScaDS-Scans hin trainiert ist. Das Ensemble ist auf fremden Schreibern klar besser als beide Modelle allein und auf der eigenen Schrift so gut wie v1.
+
+**Ohne Gewinn gemessen und wieder entfernt:**
+- Strichbreite 1,6/2,0/3,4 px statt 2,6 px: auf ScaDS war 2,0 px um 0,4 Punkte besser, auf der eigenen Schrift gleich bzw. schlechter.
+- Test-Time-Augmentation über mehrere Strichbreiten bzw. über Scherungen ±8–10°: schlechter.
+- Begradigen (Hauptachse) und Kursiv-Aufrichten: Die „schräg“-Probe ist kursiv, nicht gedreht. Aufrichten machte es schlechter.
+- Glätten der Punkte und Binarisieren.
+- α/β-Variationen: auf 7 Proben im Rauschen (±2 Fehler).
+
+**Behoben:**
+- Ein versehentlicher Tupfer weit unter einer Zeile wurde ihr zugeschlagen und hat die Zeile beim Rastern auf die halbe Höhe gestaucht. Kleine Striche weiter als eine Zeilenhöhe von jeder Zeile entfernt werden jetzt ignoriert (`segment.ts`, `STRAY_FACTOR`).
+- War `text:` von Hand geändert, blieb der Text beim Weiterschreiben still veraltet. Jetzt zeigt der Block „Text von Hand geändert …“ mit dem Knopf „Neue Erkennung übernehmen“ (`InkEntry.ocrPending`).
+
+**Offen:**
+- Mehr eigene Proben: Die 7 Proben reichen nur für grobe Entscheidungen, ein Zeichen sind 0,5 Punkte.
+- Typische Restfehler: Wortlücken („begintum“), das eigene „t“ wird zu „l“, IPv6-Doppelpunkte, die „5“.
+- Ideen: Personalisierung über Korrekturen (Hotwords, Konfusions-Prior), Wort-Konfidenz.

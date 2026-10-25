@@ -28,6 +28,9 @@ export interface SegmentOptions {
 	gapFactor: number;
 }
 
+/** Kleine Striche weiter als so viele Referenzhöhen von jeder Zeile entfernt werden ignoriert. */
+const STRAY_FACTOR = 1;
+
 const DEFAULTS: SegmentOptions = { maxAspect: 16, gapFactor: 1.5 };
 
 export function boxOf(strokes: Stroke[]): Box {
@@ -108,6 +111,8 @@ export function segmentLines(all: Stroke[], options: Partial<SegmentOptions> = {
 	}
 
 	// Kleine Striche (i-Punkte, Umlaut-Punkte, Kommas) zur nächstgelegenen Zeile; bei Gleichstand die untere.
+	// Liegt ein kleiner Strich weiter als eine Zeilenhöhe von jeder Zeile weg, ist er ein versehentlicher Tupfer:
+	// mitgenommen würde er die Box der Zeile aufblähen und die ganze Zeile beim Rastern stauchen.
 	for (const s of strokes.filter(isSmall)) {
 		const y = cy(boxes.get(s)!);
 		if (!lines.length) {
@@ -123,6 +128,7 @@ export function segmentLines(all: Stroke[], options: Partial<SegmentOptions> = {
 				bestDist = d;
 			}
 		}
+		if (bestDist > STRAY_FACTOR * H) continue;
 		best.strokes.push(s);
 	}
 

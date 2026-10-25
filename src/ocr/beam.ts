@@ -67,6 +67,27 @@ export function ctcBeamSearch(
 	alphabet: string,
 	options: BeamOptions = {},
 ): CtcResult {
+	const { candidates, confidence } = ctcBeamCandidates(data, dims, alphabet, options);
+	const best = candidates[0];
+	return { text: (best?.text ?? "").replace(/\s+/g, " ").trim(), confidence };
+}
+
+/** Ein überlebender Präfix am Ende der Beam-Search. */
+export interface BeamCandidate {
+	text: string;
+	/** log P_ctc des Präfixes über die im Beam verfolgten Pfade */
+	acoustic: number;
+	/** α·log P_lm + β·Länge, inkl. Grammatik (wie `prefixScore`) */
+	lm: number;
+}
+
+/** Wie `ctcBeamSearch`, aber alle überlebenden Präfixe, bestes zuerst (N-Best fürs Ensemble). */
+export function ctcBeamCandidates(
+	data: ArrayLike<number>,
+	dims: readonly number[],
+	alphabet: string,
+	options: BeamOptions = {},
+): { candidates: BeamCandidate[]; confidence: number } {
 	const blank = options.blank ?? 0;
 	const width = options.beamWidth ?? 16;
 	const alpha = options.alpha ?? 0.5;
@@ -84,19 +105,10 @@ export function ctcBeamSearch(
 	// Zeichen-Score für das Anhängen von Klasse k an einen Präfix (gecacht je Präfix + Klasse)
 	const scoreCache = new Map<string, number>();
 	const charScore = (beam: Beam, k: number): number => {
-		const ch = chars[k - 1] ?? "";
 		const key = `${beam.text}\u0000${k}`;
 		const cached = scoreCache.get(key);
 		if (cached !== undefined) return cached;
-		let s: number;
-		const mode = grammar ? tokenMode(beam.text.slice(beam.text.lastIndexOf(" ") + 1)) : null;
-		if (mode) {
-			const ok = ch === " " || (mode === "ipv6" ? HEX_CHARS : V4_CHARS).test(ch);
-			s = alpha * (ok ? ADDR_ALLOWED : ADDR_PENALTY);
-		} else {
-			s = lm ? alpha * lmLogProb(lm, beam.h, k) : 0;
-		}
-		s += beta;
+		const s = appendScore(beam.text, beam.h, k, chars, { alpha, beta, lm, grammar });
 		scoreCache.set(key, s);
 		return s;
 	};
@@ -154,14 +166,101 @@ export function ctcBeamSearch(
 			beams.length = width;
 		}
 	}
-	let best = beams[0];
-	let bestScore = NEG;
-	for (const b of beams) {
-		const s = logAdd(b.pb, b.pnb) + b.lm;
-		if (s > bestScore) {
-			bestScore = s;
-			best = b;
-		}
+	const candidates = beams
+		.map((b) => ({ text: b.text, acoustic: logAdd(b.pb, b.pnb), lm: b.lm }))
+		.sort((a, b) => b.acoustic + b.lm - (a.acoustic + a.lm));
+	return { candidates, confidence: steps ? probSum / steps : 0 };
+}
+
+interface LmScoring {
+	alpha: number;
+	beta: number;
+	lm: CharLmData | null;
+	grammar: boolean;
+}
+
+/** Score fürs Anhängen von Klasse k an `prefix` (LM-Historie h): Grammatik in Adressen, sonst α·LM, plus β. */
+function appendScore(prefix: string, h: number, k: number, chars: string[], o: LmScoring): number {
+	const ch = chars[k - 1] ?? "";
+	const mode = o.grammar ? tokenMode(prefix.slice(prefix.lastIndexOf(" ") + 1)) : null;
+	let s: number;
+	if (mode) {
+		const ok = ch === " " || (mode === "ipv6" ? HEX_CHARS : V4_CHARS).test(ch);
+		s = o.alpha * (ok ? ADDR_ALLOWED : ADDR_PENALTY);
+	} else {
+		s = o.lm ? o.alpha * lmLogProb(o.lm, h, k) : 0;
 	}
-	return { text: best.text.replace(/\s+/g, " ").trim(), confidence: steps ? probSum / steps : 0 };
+	return s + o.beta;
+}
+
+/** LM-/Grammatik-Score eines ganzen Textes, genau wie die Beam-Search ihn Zeichen für Zeichen aufbaut. */
+export function prefixScore(text: string, alphabet: string, options: BeamOptions = {}): number {
+	const chars = Array.from(alphabet);
+	const index = new Map(chars.map((c, i) => [c, i + 1]));
+	const lm = options.lm ?? null;
+	const o = { alpha: options.alpha ?? 0.5, beta: options.beta ?? 1, lm, grammar: options.grammar ?? true };
+	let h = alphabetCodes(alphabet).get(" ") ?? 0;
+	let prefix = "";
+	let score = 0;
+	for (const ch of Array.from(text)) {
+		const k = index.get(ch);
+		if (k === undefined) return NEG;
+		score += appendScore(prefix, h, k, chars, o);
+		if (lm) h = extendHistory(lm, h, k);
+		prefix += ch;
+	}
+	return score;
+}
+
+/**
+ * log P(text | Ausgabe) nach CTC: Summe über alle Ausrichtungen (Vorwärts-Algorithmus). Unabhängig davon, wann
+ * genau ein Modell seine Zeichen ausgibt – damit lassen sich Kandidaten verschiedener Modelle fair vergleichen.
+ */
+export function ctcLogLikelihood(
+	data: ArrayLike<number>,
+	dims: readonly number[],
+	alphabet: string,
+	text: string,
+	options: { blank?: number; validSteps?: number } = {},
+): number {
+	const blank = options.blank ?? 0;
+	const C = dims[dims.length - 1];
+	const T = Math.min(dims.length === 3 ? (dims[0] === 1 ? dims[1] : dims[0]) : dims[0], options.validSteps ?? Infinity);
+	const index = new Map(Array.from(alphabet).map((c, i) => [c, i + 1]));
+	const labels: number[] = [];
+	for (const ch of Array.from(text)) {
+		const k = index.get(ch);
+		if (k === undefined) return NEG;
+		labels.push(k);
+	}
+	const L = labels.length * 2 + 1;
+	const ext = Array.from({ length: L }, (_, i) => (i % 2 ? labels[(i - 1) / 2] : blank));
+	if (T <= 0) return labels.length ? NEG : 0;
+	let alphaPrev = new Float64Array(L).fill(NEG);
+	const lp = (t: number, c: number, logZ: number) => data[t * C + c] - logZ;
+	const frameZ = (t: number) => {
+		let max = -Infinity;
+		for (let c = 0; c < C; c++) max = Math.max(max, data[t * C + c]);
+		let sum = 0;
+		for (let c = 0; c < C; c++) sum += Math.exp(data[t * C + c] - max);
+		return max + Math.log(sum);
+	};
+	let z = frameZ(0);
+	alphaPrev[0] = lp(0, ext[0], z);
+	if (L > 1) alphaPrev[1] = lp(0, ext[1], z);
+	for (let t = 1; t < T; t++) {
+		z = frameZ(t);
+		const cur = new Float64Array(L).fill(NEG);
+		// Nur Zustände, die vom Ende aus noch erreichbar sind bzw. vom Anfang her erreicht wurden.
+		const lo = Math.max(0, L - 2 * (T - t));
+		const hi = Math.min(L - 1, 2 * t + 1);
+		for (let s = lo; s <= hi; s++) {
+			let a = alphaPrev[s];
+			if (s > 0) a = logAdd(a, alphaPrev[s - 1]);
+			if (s > 1 && ext[s] !== blank && ext[s] !== ext[s - 2]) a = logAdd(a, alphaPrev[s - 2]);
+			if (a !== NEG) cur[s] = a + lp(t, ext[s], z);
+		}
+		alphaPrev = cur;
+	}
+	return L > 1 ? logAdd(alphaPrev[L - 1], alphaPrev[L - 2]) : alphaPrev[0];
 }

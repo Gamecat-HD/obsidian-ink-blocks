@@ -284,6 +284,23 @@
 	font-weight: var(--font-semibold);
 }
 
+.ink-caption-pending {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-2-2) var(--size-4-2);
+	margin-top: var(--size-2-2);
+	padding: 0 var(--size-2-3);
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+}
+
+.ink-caption-pending button {
+	padding: 2px 8px;
+	height: auto;
+	font-size: var(--font-smallest);
+}
+
 .ink-caption.is-expanded {
 	display: block;
 	color: var(--text-muted);

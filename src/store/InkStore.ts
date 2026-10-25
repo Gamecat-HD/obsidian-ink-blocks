@@ -18,6 +18,8 @@ export interface InkEntry {
 	dirty: boolean;
 	/** Liegt hier (nicht im Block), damit Undo ein Neu-Rendern in Live Preview übersteht. */
 	history: History;
+	/** Neuere Erkennung, die nicht geschrieben wurde, weil `text:` von Hand geändert ist (nur im Speicher). */
+	ocrPending?: string;
 	/** Aufgedeckte Abdeckbänder – nur für diese Sitzung, nicht gespeichert (Lernen: beim nächsten Öffnen wieder zu). */
 	revealed: Set<string>;
 	/** Block war aktiv, als der Blockinhalt (z. B. `text:`) geschrieben wurde → nach dem Re-Render wieder aktivieren. */

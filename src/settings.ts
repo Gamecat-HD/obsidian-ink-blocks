@@ -1,6 +1,6 @@
 import { normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InkBlocksPlugin from "./main";
-import { ENGINE_ORDER, ENGINES, engineFiles, type EngineId } from "./ocr/models";
+import { ENGINE_ORDER, ENGINES, engineFiles, HTR_V1, HTR_V2, HTR_V2_FP32, type EngineId, type EngineSpec } from "./ocr/models";
 import type { BgStyle } from "./model/pattern";
 import { DEFAULT_SETTINGS, LIMITS, type InkSettings, type WidthSizes } from "./settingsData";
 
@@ -111,11 +111,16 @@ export class InkSettingTab extends PluginSettingTab {
 						this.plugin.ocr.invalidateCorpus();
 					}),
 			);
-		for (const id of ENGINE_ORDER) this.modelSetting(containerEl, id);
+		const rows: [EngineSpec, string, boolean][] = [
+			[HTR_V2, "Empfohlen. ", true],
+			[HTR_V2_FP32, "Empfohlen: dasselbe Modell ungerechnet – 3–4× schnellere Erkennung, gleich genau. ", true],
+			[HTR_V1, "Empfohlen zusätzlich: zusammen mit v2 (Einstellung „Automatisch“) gut 10 % weniger Fehler. ", true],
+			[ENGINES.tesseract, "Optional (letzte Ausweich-Engine). ", false],
+		];
+		for (const [spec, hint, cta] of rows) this.modelSetting(containerEl, spec, hint, cta);
 	}
 
-	private modelSetting(containerEl: HTMLElement, id: EngineId) {
-		const spec = ENGINES[id];
+	private modelSetting(containerEl: HTMLElement, spec: EngineSpec, hint: string, cta: boolean) {
 		const mb = (engineFiles(spec).reduce((n, f) => n + f.size, 0) / 1e6).toFixed(0);
 		const setting = new Setting(containerEl).setName(spec.label).setDesc("Wird geprüft …");
 		setting.settingEl.addClass("ink-model-setting");
@@ -124,12 +129,11 @@ export class InkSettingTab extends PluginSettingTab {
 				setting.setDesc("Bereit – läuft komplett offline.");
 				return;
 			}
-			const hint = id === "htr-v2" ? "Empfohlen. " : "Optional (Ausweich-Engine). ";
 			setting.setDesc(`${hint}Einmaliger Download (~${mb} MB) in den Plugin-Ordner, danach offline. Es werden keine Notizen oder Handschriften übertragen.`);
 			setting.addButton((b) =>
 				b
 					.setButtonText("Herunterladen")
-					.then((btn) => id === "htr-v2" && btn.setCta())
+					.then((btn) => cta && btn.setCta())
 					.onClick(async () => {
 						b.setDisabled(true);
 						try {

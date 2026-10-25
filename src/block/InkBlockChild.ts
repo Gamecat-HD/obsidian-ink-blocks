@@ -61,9 +61,19 @@ export class InkBlockChild extends MarkdownRenderChild {
 		if (this.editor) this.renderCaption();
 	}
 
-	/** Erkannter Text (aus `text:`) dezent unter der Fläche; Klick klappt auf/zu. */
-	private renderCaption() {
+	get entryRef(): InkEntry | null {
+		return this.entry;
+	}
+
+	/**
+	 * Erkannter Text (aus `text:`) dezent unter der Fläche; Klick klappt auf/zu. Ist der Text von Hand geändert
+	 * und die Handschrift seitdem anders erkannt worden, steht daneben „Neue Erkennung übernehmen“.
+	 */
+	renderCaption() {
 		this.containerEl.querySelector(":scope > .ink-caption")?.remove();
+		this.containerEl.querySelector(":scope > .ink-caption-pending")?.remove();
+		const pending = this.entry?.ocrPending;
+		if (pending !== undefined && this.editor) this.renderPending(pending);
 		const text = this.fields.text?.trim();
 		if (!text || !this.plugin.settings.showText) return;
 		const caption = this.containerEl.createDiv({ cls: "ink-caption", attr: { "aria-label": "Erkannter Text" } });
@@ -72,6 +82,20 @@ export class InkBlockChild extends MarkdownRenderChild {
 		caption.addEventListener("click", (e) => {
 			e.stopPropagation();
 			caption.toggleClass("is-expanded", !caption.hasClass("is-expanded"));
+		});
+	}
+
+	private renderPending(pending: string) {
+		const box = this.containerEl.createDiv({ cls: "ink-caption-pending" });
+		box.createSpan({ text: "Text von Hand geändert – die Handschrift wird inzwischen anders erkannt." });
+		const btn = box.createEl("button", { text: "Neue Erkennung übernehmen", attr: { "aria-label": pending } });
+		for (const type of ["pointerdown", "mousedown", "touchstart"]) box.addEventListener(type, (e) => e.stopPropagation());
+		btn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			const target = this.ocrTarget();
+			if (!target) return;
+			btn.disabled = true;
+			void this.plugin.ocr.run(target, true);
 		});
 	}
 

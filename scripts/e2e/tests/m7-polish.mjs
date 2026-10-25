@@ -78,7 +78,8 @@ export default async (h) => {
 		const remote = JSON.parse(await app.vault.read(file));
 		remote.strokes.push({ id: "fremd1", t: "pen", c: 2, s: 3, p: [3000, 3300, 128, 1000, 0, 0] });
 		await app.vault.modify(file, JSON.stringify(remote));
-		await new Promise((r) => setTimeout(r, 2500));
+		// Speichern ist gebündelt (1,5 s nach der letzten Änderung); eine laufende Texterkennung verlängert das.
+		await new Promise((r) => setTimeout(r, 5000));
 		const saved = JSON.parse(await app.vault.read(file)).strokes.map((s) => s.id);
 		return { mem: entry.doc.strokes.map((s) => s.id), saved };
 	}, ID, pr.path);

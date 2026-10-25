@@ -48,6 +48,12 @@ export default async (h) => {
 	assert.ok(await h.evaluate(() => !!document.querySelector(".markdown-source-view .ink-surface")), "Block nach dem Schreiben im Quelltext");
 	assert.ok(await h.evaluate(() => !!document.querySelector(".markdown-source-view .ink-block.is-active")), "Block nach Re-Render nicht wieder aktiv");
 	await h.screenshot("m5-recognized.png");
+	// Automatisch: v2 (fp32, wenn geladen) mit v1 als Zweitmodell (Ensemble)
+	const engine = await h.evaluate((id) => {
+		const el = document.querySelector(".markdown-source-view .ink-surface");
+		return app.plugins.plugins[id].store.entries.get(el.dataset.path).doc.ocr.engine;
+	}, ID);
+	assert.match(engine, /^htr-v2@68b46411\+lm\+htr-v1@05cce04d/, `Engine: ${engine}`);
 
 	// 2. Obsidian-Suche findet die Handschrift
 	await h.sleep(2500); // Autosave der Notiz
@@ -89,13 +95,22 @@ export default async (h) => {
 	await write("Test", { y: 230, seed: 3 });
 	await h.sleep(4000);
 	assert.equal(await field(), "mein eigener Text", "Nutzer-Text überschrieben");
-	// … bis man die Erkennung erzwingt
-	await h.evaluate(() => {
-		app.workspace.activeEditor.editor.setCursor({ line: 0, ch: 0 });
-		app.commands.executeCommandById("obsidian-ink-blocks:recognize-note");
-	});
-	text = await waitField((f) => f && /Hallo/.test(f), "erzwungene Erkennung");
+	// … der Block zeigt aber, dass eine neuere Erkennung bereitliegt; ein Klick übernimmt sie
+	const pending = await h.waitFor(
+		() => h.evaluate(() => {
+			const b = document.querySelector(".markdown-source-view .ink-caption-pending button");
+			if (!b) return null;
+			const r = b.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: b.getAttribute("aria-label") };
+		}),
+		{ timeout: 10000, what: "Hinweis „Neue Erkennung übernehmen“" },
+	);
+	assert.match(pending.label, /Hallo/);
+	await h.click(pending.x, pending.y);
+	text = await waitField((f) => f && /Hallo/.test(f), "übernommene Erkennung");
 	assert.match(text, /Test/);
+	await h.sleep(500);
+	assert.equal(await h.evaluate(() => !!document.querySelector(".markdown-source-view .ink-caption-pending")), false, "Hinweis bleibt nach dem Übernehmen");
 
 	// 5. Offline
 	await h.cdp.send("Network.enable");

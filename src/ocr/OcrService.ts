@@ -7,8 +7,17 @@ import { fnv1a } from "../util/hash";
 import { BENCHMARK_TITLE } from "./benchmark";
 import { markdownToCorpus } from "./corpus";
 import { HtrEngine, TesseractEngine, type DecoderSource, type Engine } from "./engines";
-import { ENGINE_ORDER, ENGINES, HTR_V1, HTR_V2, ModelStore, type EngineId } from "./models";
+import { ENGINE_ORDER, ENGINES, HTR_V1, HTR_V2, HTR_V2_FP32, ModelStore, type EngineId, type HtrSpec } from "./models";
+import { partnerKey } from "./engines";
+import { DEFAULT_RASTER, type RasterOptions } from "./protocol";
 import { referenceHeight, segmentLines } from "./segment";
+
+/** Kurzform der Rasterung für die Engine-Version (anderes Rastern → Zeilen-Cache neu). Standard = leer. */
+function rasterKey(r: RasterOptions): string {
+	const d = DEFAULT_RASTER;
+	const key = (o: RasterOptions) => o.strokePx.join("/");
+	return key(r) === key(d) ? "" : `+r${key(r)}`;
+}
 
 /** Wohin das Ergebnis geschrieben wird – ein ink-Block in einer Notiz. */
 export interface OcrTarget {
@@ -31,7 +40,10 @@ const RETRY_BUSY_MS = 2000;
  * Beam-Search-Parameter, gemessen auf 1168 ScaDS-Zeilen unbekannter Schreiber (scripts/bench/):
  * α/β auf Val gewählt; Test-CER 8,1 % → 7,0 % schon mit dem fachfremden Vault-LM.
  */
-const DECODER = { order: 6, alpha: 0.35, beta: 1.5, beamWidth: 16, grammar: true };
+/** Anteil von v1 am Ensemble mit v2 – gemessen in scripts/bench/real.mjs bzw. scads.mjs. */
+export const ENSEMBLE_WEIGHT = 0.7;
+
+export const DECODER = { order: 6, alpha: 0.35, beta: 1.5, beamWidth: 16, grammar: true };
 /** Höchstens so viel Vault-Text fließt ins LM (neueste Notizen zuerst). */
 const MAX_CORPUS_CHARS = 4_000_000;
 /** Fachbegriffe zählen so oft wie ebenso viele Vorkommen im Vault. */
@@ -55,6 +67,13 @@ export class OcrService {
 	private warnedMissing = false;
 	private corpus: { lines: string[]; at: number; gen: number } | null = null;
 	private corpusStale = false;
+	/** Rasterung und Decoder – öffentlich für die Messskripte (scripts/bench/real.mjs); nach Änderung `reset()`. */
+	raster: RasterOptions = { ...DEFAULT_RASTER };
+	/** v2 als int8 (10 MB) oder fp32 (40 MB, 3–4× schneller in Wasm, gleich genau); „auto“ = fp32, wenn geladen. */
+	v2Precision: "auto" | "int8" | "fp32" = "auto";
+	/** Anteil von v1 im Ensemble mit v2 (0 = aus). */
+	ensembleWeight = ENSEMBLE_WEIGHT;
+	decoderParams = { ...DECODER };
 
 	constructor(private readonly plugin: InkBlocksPlugin) {
 		this.models = new ModelStore(plugin);
@@ -92,7 +111,7 @@ export class OcrService {
 			this.corpusStale = false;
 			c = this.corpus = { lines: await this.collectCorpus(), at: Date.now(), gen: (c?.gen ?? 0) + 1 };
 		}
-		return { gen: c.gen, setup: { lines: c.lines, ...DECODER } };
+		return { gen: c.gen, setup: { lines: c.lines, ...this.decoderParams } };
 	};
 
 	/** Klartext aller Notizen (neueste zuerst, gedeckelt) plus Fachbegriffe aus den Einstellungen. */
@@ -119,7 +138,9 @@ export class OcrService {
 	/** Engines, deren Dateien vollständig vorliegen. */
 	async readyEngines(): Promise<EngineId[]> {
 		const ready: EngineId[] = [];
-		for (const id of ENGINE_ORDER) if (await this.models.isReady(ENGINES[id])) ready.push(id);
+		for (const id of ENGINE_ORDER) {
+			if ((await this.models.isReady(ENGINES[id])) || (id === "htr-v2" && (await this.models.isReady(HTR_V2_FP32)))) ready.push(id);
+		}
 		return ready;
 	}
 
@@ -157,26 +178,51 @@ export class OcrService {
 		return next;
 	}
 
-	private create(id: EngineId): Engine {
+	private create(id: EngineId, partner: { spec: HtrSpec; weight: number } | null, spec: HtrSpec): Engine {
 		let engine = this.engines.get(id);
+		if (engine instanceof HtrEngine && (engine.partnerKey !== partnerKey(partner) || !engine.version.includes(spec.model.sha256.slice(0, 8)))) {
+			engine.dispose();
+			engine = undefined;
+		}
 		if (!engine) {
 			const decoder = this.plugin.settings.ocrLanguageModel ? this.decoder : null;
-			engine = id === "tesseract" ? new TesseractEngine(this.models) : new HtrEngine(id === "htr-v2" ? HTR_V2 : HTR_V1, this.models, decoder);
+			engine =
+				id === "tesseract"
+					? new TesseractEngine(this.models)
+					: new HtrEngine(spec, this.models, decoder, rasterKey(this.raster), partner);
 			this.engines.set(id, engine);
 		}
 		return engine;
+	}
+
+	/** Modelldateien für eine HTR-Engine: v2 bevorzugt als fp32, wenn vorhanden. */
+	private async specFor(id: EngineId): Promise<HtrSpec> {
+		if (id !== "htr-v2") return HTR_V1;
+		if (this.v2Precision === "fp32") return HTR_V2_FP32;
+		if (this.v2Precision === "int8") return HTR_V2;
+		return (await this.models.isReady(HTR_V2_FP32)) ? HTR_V2_FP32 : HTR_V2;
+	}
+
+	/**
+	 * Bei „Automatisch“ bekommt v2 das Modell v1 als Zweitmodell, wenn es geladen ist (Ensemble per Rescoring,
+	 * siehe ENSEMBLE_WEIGHT). Eine von Hand gewählte Engine läuft allein.
+	 */
+	private async partnerFor(id: EngineId): Promise<{ spec: HtrSpec; weight: number } | null> {
+		if (id !== "htr-v2" || this.plugin.settings.ocrEngine !== "auto" || this.ensembleWeight <= 0 || this.failed.has("htr-v1")) return null;
+		return (await this.models.isReady(HTR_V1)) ? { spec: HTR_V1, weight: this.ensembleWeight } : null;
 	}
 
 	/** Erste bereite, nicht gescheiterte Engine; meldet einen Wechsel auf eine Ausweich-Engine. */
 	private async pickEngine(): Promise<Engine | null> {
 		const order = this.candidates();
 		for (const id of order) {
-			if (this.failed.has(id) || !(await this.models.isReady(ENGINES[id]))) continue;
+			const ready = (await this.models.isReady(ENGINES[id])) || (id === "htr-v2" && (await this.models.isReady(HTR_V2_FP32)));
+			if (this.failed.has(id) || !ready) continue;
 			if (id !== order[0] && id !== this.lastEngine) {
 				new Notice(`Texterkennung: ${ENGINES[order[0]].label} nicht verfügbar – nutze ${ENGINES[id].label}.`, 8000);
 			}
 			this.lastEngine = id;
-			return this.create(id);
+			return this.create(id, await this.partnerFor(id), await this.specFor(id));
 		}
 		return null;
 	}
@@ -198,7 +244,7 @@ export class OcrService {
 			if (!engine) return null;
 			const segs = lines.flat();
 			try {
-				const results = await engine.recognize(segs.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight })));
+				const results = await engine.recognize(segs.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight, raster: this.raster })));
 				const byKey = new Map(segs.map((seg, i) => [seg.key, results[i]?.text ?? ""]));
 				return lines
 					.map((l) => l.map((seg) => byKey.get(seg.key)).filter(Boolean).join(" "))
@@ -236,7 +282,7 @@ export class OcrService {
 			if (!todo.length) break;
 			try {
 				const results = await engine.recognize(
-					todo.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight })),
+					todo.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight, raster: this.raster })),
 				);
 				todo.forEach((seg, i) => (recognized[seg.key] = results[i]?.text ?? ""));
 				break;
@@ -271,7 +317,14 @@ export class OcrService {
 		}
 		if (!force && currentText !== "" && fnv1a(currentText) !== written) {
 			if (cacheChanged) this.plugin.store.touch(entry);
+			// Von Hand geänderter Text bleibt – aber der Block zeigt an, dass eine neuere Erkennung bereitliegt.
+			entry.ocrPending = text;
+			this.plugin.refreshCaptions(entry);
 			return "user-edited";
+		}
+		if (entry.ocrPending !== undefined) {
+			entry.ocrPending = undefined;
+			this.plugin.refreshCaptions(entry);
 		}
 		if (target.busy()) return "busy";
 

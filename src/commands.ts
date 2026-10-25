@@ -301,7 +301,7 @@ async function saveSegmentImages(plugin: InkBlocksPlugin, note: TFile, text: str
 		let n = 0;
 		for (const [li, line] of segmentLines(entry.doc.strokes).entries()) {
 			for (const seg of line) {
-				const { canvas } = rasterizeSegment({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight }, 64, 1024);
+				const { canvas } = rasterizeSegment({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight, raster: plugin.ocr.raster }, 64, 1024).canvases[0];
 				const png = await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer();
 				const name = `${entry.doc.id}-${++n}.png`;
 				const path = `${dir}/${name}`;

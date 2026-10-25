@@ -89,4 +89,4 @@ npm run e2e -- scripts/e2e/tests/*.mjs   # E2E in echtem Obsidian (s. u.)
 
 - Das Plugin sendet **keine** Notiz- oder Handschriftdaten irgendwohin. Die Texterkennung läuft lokal (onnxruntime-web/Wasm in einem Worker).
 - **Einmaliger Download, nur auf Knopfdruck** (Einstellungen → Ink Blocks → „Herunterladen“ oder Befehl „Texterkennung: Modelle herunterladen“): Erkennungsmodell `naeyn/de-htr-web-v2` von Hugging Face (ca. 10 MB, Apache-2.0, fester Commit) und `ort-wasm-simd-threaded.wasm` von jsDelivr (ca. 14 MB, onnxruntime-web 1.30.0). Beides wird per SHA-256 geprüft und in `<plugin>/models/` abgelegt. Danach läuft alles offline.
-- Optional, ebenfalls nur auf Knopfdruck: die Ausweich-Engines `naeyn/de-htr-web` v1 (Hugging Face, ca. 10 MB) und Tesseract.js 7 mit deutschen Sprachdaten (jsDelivr, ca. 5 MB).
+- Empfohlen, ebenfalls nur auf Knopfdruck: `naeyn/de-htr-web` v1 (Hugging Face, ca. 10 MB). Zusammen mit v2 erkennt es per Ensemble gut 10 % weniger Fehler. Dazu dasselbe v2-Modell ungerechnet als `model-fp32.onnx` (ca. 40 MB), das 3–4× schneller erkennt. Optional: Tesseract.js 7 mit deutschen Sprachdaten (jsDelivr, ca. 5 MB) als letzte Ausweich-Engine.

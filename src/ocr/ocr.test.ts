@@ -29,6 +29,13 @@ describe("segmentLines", () => {
 		const strokes = [...word(50, 40, 4), ...word(50, 120, 4), dot(60, 110), dot(66, 110)];
 		expect(segmentLines(strokes).map(ids)).toEqual([[4], [6]]);
 	});
+	it("ignoriert versehentliche Tupfer weit unter der Zeile (würden die Zeile stauchen)", () => {
+		// Zeile y 40–70 (Höhe 30); Tupfer 50 Einheiten darunter, i-Punkt knapp darüber bleibt
+		const strokes = [...word(50, 40, 4), dot(60, 32), dot(200, 120)];
+		const [line] = segmentLines(strokes);
+		expect(ids(line)).toEqual([5]);
+		expect(line[0].box.maxY).toBe(70);
+	});
 	it("trennt Antwortfelder bei großer horizontaler Lücke, Wortabstände bleiben im Segment", () => {
 		const lines = segmentLines([...word(50, 40, 3), ...word(600, 42, 3)]);
 		expect(lines.map(ids)).toEqual([[3, 3]]);

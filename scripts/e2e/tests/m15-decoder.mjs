@@ -72,7 +72,8 @@ export default async (h) => {
 			app.workspace.activeEditor.editor.setCursor({ line: 0, ch: 0 });
 			app.commands.executeCommandById("obsidian-ink-blocks:recognize-note");
 		}, ID, lm);
-		const engine = lm ? /\+lm$/ : /^htr-v2@[0-9a-f]{8}$/;
+		// Automatisch: v2 mit v1 als Zweitmodell (Ensemble) – Kennung endet auf „+htr-v1@…x<Gewicht>“
+		const engine = lm ? /\+lm\+htr-v1@/ : /^htr-v2@[0-9a-f]{8}\+htr-v1@/;
 		const state = () =>
 			h.evaluate((id) => {
 				const entry = [...app.plugins.plugins[id].store.entries.values()].find((e) => e.doc?.ocr);

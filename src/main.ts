@@ -4,6 +4,11 @@ import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
 import type { InkClipboard } from "./input/Selection";
 import { OcrService } from "./ocr/OcrService";
+import { rasterizeSegment } from "./ocr/raster";
+import { referenceHeight, segmentLines } from "./ocr/segment";
+
+/** Für Messskripte (scripts/bench/real.mjs): Segmentierung und Rasterung ohne Worker. */
+const ocrInternals = { segmentLines, referenceHeight, rasterizeSegment };
 import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
 import { InkSettingTab, normalizeSettings, type InkSettings } from "./settings";
@@ -25,9 +30,11 @@ export default class InkBlocksPlugin extends Plugin {
 		loaded: number;
 		unloaded: number;
 		rewriteUrl?: (url: string) => string;
+		ocr: typeof ocrInternals;
 	} = {
 		loadPdfJs,
 		getIconIds,
+		ocr: ocrInternals,
 		loaded: 0,
 		unloaded: 0,
 	};
@@ -74,6 +81,11 @@ export default class InkBlocksPlugin extends Plugin {
 		// Über alle Ansichten, auch die ausgeklappte (die gehört zu keinem Block).
 		for (const editor of this.editors) editor.toolsChanged();
 		this.saveSoon();
+	}
+
+	/** Erkennungs-Hinweis unter den Blöcken einer Datei neu zeichnen (z. B. „neuere Erkennung liegt bereit“). */
+	refreshCaptions(entry: InkEntry) {
+		for (const block of this.blocks) if (block.entryRef === entry) block.renderCaption();
 	}
 
 	/** Abdeckbänder einer Datei auf-/zugedeckt: alle Ansichten dieser Datei. */

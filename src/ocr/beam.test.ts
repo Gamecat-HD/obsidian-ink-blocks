@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ctcBeamSearch, tokenMode } from "./beam";
+import { ctcBeamCandidates, ctcBeamSearch, ctcLogLikelihood, prefixScore, tokenMode } from "./beam";
 import { ctcGreedy } from "./ctc";
 import { markdownToCorpus } from "./corpus";
 import { alphabetCodes, buildCharLm, extendHistory, lmLogProb } from "./lm";
@@ -92,5 +92,37 @@ describe("markdownToCorpus", () => {
 			"```",
 		].join("\n");
 		expect(markdownToCorpus(md)).toEqual(["Subnetting", "Die Maske ist wichtig, siehe Doku.", "SELECT * FROM kunden;"]);
+	});
+});
+
+describe("N-Best und Rescoring (Ensemble)", () => {
+	it("CTC-Vorwärts: Summe über alle Ausrichtungen", () => {
+		// 2 Frames, je P(a) = 0.6, P(Blank) = 0.4: „a“ = aa + a_ + _a = 0.36 + 0.24 + 0.24 (Rest-Klassen je 1e-4 → Z)
+		const { data, dims } = logits([[["a", 0.6]], [["a", 0.6]]]);
+		const Z = 1 + (C - 2) * 1e-4;
+		expect(Math.exp(ctcLogLikelihood(data, dims, ALPHABET, "a"))).toBeCloseTo(0.84 / Z ** 2, 4);
+		// „aa“ braucht einen Blank dazwischen → mit 2 Frames unmöglich
+		expect(ctcLogLikelihood(data, dims, ALPHABET, "aa")).toBe(-Infinity);
+		expect(Math.exp(ctcLogLikelihood(data, dims, ALPHABET, ""))).toBeCloseTo(0.16 / Z ** 2, 4);
+		// unbekanntes Zeichen
+		expect(ctcLogLikelihood(data, dims, ALPHABET, "ä")).toBe(-Infinity);
+	});
+
+	it("unabhängig vom Zeitpunkt der Spitze", () => {
+		const early = logits([[["d", 0.9]], [["", 0.9]], [["", 0.9]], [["", 0.9]]]);
+		const late = logits([[["", 0.9]], [["", 0.9]], [["", 0.9]], [["d", 0.9]]]);
+		const a = ctcLogLikelihood(early.data, early.dims, ALPHABET, "d");
+		const b = ctcLogLikelihood(late.data, late.dims, ALPHABET, "d");
+		expect(a).toBeCloseTo(b, 6);
+	});
+
+	it("N-Best: bestes zuerst, gleich ctcBeamSearch; prefixScore = LM-Anteil des Beams", () => {
+		const lm = buildCharLm(["der router leitet pakete"], ALPHABET, { order: 4, minCount: 1 });
+		const { data, dims } = logits(spell([[["r", 0.9]], [["o", 0.6], ["a", 0.4]], [["u", 0.9]], [["t", 0.9]]]));
+		const opts = { lm, alpha: 0.5, beta: 1, beamWidth: 8 };
+		const { candidates } = ctcBeamCandidates(data, dims, ALPHABET, opts);
+		expect(candidates.length).toBeGreaterThan(1);
+		expect(candidates[0].text).toBe(ctcBeamSearch(data, dims, ALPHABET, opts).text);
+		for (const c of candidates.slice(0, 4)) expect(prefixScore(c.text, ALPHABET, opts)).toBeCloseTo(c.lm, 6);
 	});
 });

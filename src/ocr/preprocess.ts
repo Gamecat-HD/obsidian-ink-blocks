@@ -15,8 +15,6 @@ export interface HtrConfig {
 }
 
 export const RASTER_PAD = 4;
-/** Strichbreite im 64-px-Zeilenbild – entspricht etwa typischer Handschrift in den Trainingsdaten. */
-export const RASTER_STROKE_PX = 2.6;
 
 export interface RasterTransform {
 	scale: number;

@@ -52,6 +52,13 @@ export const HTR_V2 = htr("htr-v2", "de-htr-web-v2", "naeyn/de-htr-web-v2", "de-
 	["b576a0a1281b9be46b2574028b75575e041b7d7cb650f063886e733467cc1499", 10396365],
 	["4ebd69d9d27b398ea3997b031318accc13123f6a8950def1fedc6e364cb758fa", 1362]);
 
+/** v2 ungerechnet (fp32, 40 MB) statt int8 – derselbe Commit und dieselbe config.json. */
+export const HTR_V2_FP32: HtrSpec = (() => {
+	const m: ModelFile = { ...HTR_V2.model, path: HTR_V2.model.path.replace(/model\.onnx$/, "model-fp32.onnx"), url: HTR_V2.model.url.replace(/model\.onnx$/, "model-fp32.onnx"),
+		sha256: "68b46411b8236b44d0d98865909d217ef13b41f12db769993c67eeb8d6e8c45a", size: 40259857 };
+	return { ...HTR_V2, label: "de-htr-web-v2 schnell (fp32)", model: m, files: [m, HTR_V2.config, ORT_WASM] };
+})();
+
 export const HTR_V1 = htr("htr-v1", "de-htr-web (v1)", "naeyn/de-htr-web", "de-htr-web", "8b0350ccd9bbc741977fee79ac40ea1ed37633e7",
 	["05cce04d3938a64edaee79caf2a74587eaa9f8c46c146d6e04f0512bfce51d82", 9843872],
 	["d4889234f69329e5e0b834c96a06dc084e5fa44658968168940844e389560a79", 604]);
