@@ -1,4 +1,4 @@
-import { normalizePath, Notice, type Editor, type MarkdownFileInfo, type MarkdownView, type TFile } from "obsidian";
+import { Menu, normalizePath, Notice, type Editor, type MarkdownFileInfo, type MarkdownView, type TFile } from "obsidian";
 import { formatBgLink } from "./block/bgLink";
 import { findInkFences } from "./block/locate";
 import { parseBlock, setField } from "./block/source";
@@ -13,6 +13,8 @@ import { rasterizeSegment } from "./ocr/raster";
 import { referenceHeight, segmentLines } from "./ocr/segment";
 import { convertEmbedAtLine } from "./ui/EmbedAnnotator";
 import { OrphanModal } from "./ui/OrphanModal";
+import { DictationModal, ReviewModal, type ReviewSource } from "./ui/TrainingModals";
+import { runTuning } from "./training/runTuning";
 import { inkFileName, shortId } from "./util/ids";
 
 export function registerCommands(plugin: InkBlocksPlugin) {
@@ -92,6 +94,35 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 			if (ctx.file) void saveSegmentImages(plugin, ctx.file, editor.getValue());
 		},
 	});
+
+	plugin.addCommand({
+		id: "training-dictation",
+		name: "Schreibtraining: Diktat",
+		callback: () => new DictationModal(plugin).open(),
+	});
+
+	plugin.addCommand({
+		id: "training-review-note",
+		name: "Schreibtraining: Erkennung dieser Notiz überprüfen",
+		editorCallback: (editor, ctx) => {
+			if (ctx.file) openReview(plugin, noteSources(ctx.file.path, editor.getValue()));
+		},
+	});
+
+	plugin.addCommand({
+		id: "training-review-recent",
+		name: "Schreibtraining: Unsichere Wörter der letzten Schreibflächen überprüfen",
+		callback: async () => openReview(plugin, await recentSources(plugin)),
+	});
+
+	plugin.addCommand({
+		id: "training-tune",
+		name: "Schreibtraining: Erkennung auf meine Schrift abstimmen",
+		callback: () => void runTuning(plugin),
+	});
+
+	// Auf dem Tablet gibt es keine Tastenkürzel – das Training auch über die Seitenleiste.
+	plugin.addRibbonIcon("graduation-cap", "Schreibtraining", (e) => trainingMenu(plugin).showAtMouseEvent(e));
 
 	plugin.addCommand({
 		id: "pen-diagnostics",
@@ -317,4 +348,56 @@ async function saveSegmentImages(plugin: InkBlocksPlugin, note: TFile, text: str
 	const file = vault.getFileByPath(target);
 	if (file) await vault.modify(file, md.join("\n"));
 	await plugin.app.workspace.getLeaf(true).openFile(file ?? (await vault.create(target, md.join("\n"))));
+}
+
+/** Menü des Schreibtrainings (Seitenleiste, Einstellungen). */
+export function trainingMenu(plugin: InkBlocksPlugin): Menu {
+	const menu = new Menu();
+	menu.addItem((i) => i.setTitle("Diktat").setIcon("pencil-line").onClick(() => new DictationModal(plugin).open()));
+	const file = plugin.app.workspace.getActiveFile();
+	if (file?.extension === "md") {
+		menu.addItem((i) =>
+			i
+				.setTitle("Erkennung dieser Notiz überprüfen")
+				.setIcon("file-check")
+				.onClick(async () => openReview(plugin, noteSources(file.path, await plugin.app.vault.cachedRead(file)))),
+		);
+	}
+	menu.addItem((i) => i.setTitle("Unsichere Wörter der letzten Flächen").setIcon("list-checks").onClick(async () => openReview(plugin, await recentSources(plugin))));
+	menu.addItem((i) => i.setTitle("Auf meine Schrift abstimmen").setIcon("sliders-horizontal").onClick(() => void runTuning(plugin)));
+	return menu;
+}
+
+function openReview(plugin: InkBlocksPlugin, sources: ReviewSource[]) {
+	if (!sources.length) {
+		new Notice("Keine Schreibflächen gefunden.");
+		return;
+	}
+	new ReviewModal(plugin, sources).open();
+}
+
+/** ink-Blöcke einer Notiz. */
+function noteSources(notePath: string, text: string): ReviewSource[] {
+	return findInkFences(text)
+		.filter((f) => f.file)
+		.map((f) => ({ inkPath: normalizePath(f.file!), notePath, line: f.open }));
+}
+
+/** Zuletzt geänderte Schreibflächen (höchstens so viele) samt der Notiz, in der ihr Block steht. */
+const RECENT_LIMIT = 25;
+
+async function recentSources(plugin: InkBlocksPlugin): Promise<ReviewSource[]> {
+	const { vault } = plugin.app;
+	const inks = vault
+		.getFiles()
+		.filter((f) => f.extension === "ink")
+		.sort((a, b) => b.stat.mtime - a.stat.mtime)
+		.slice(0, RECENT_LIMIT);
+	const where = new Map<string, { notePath: string; line: number }>();
+	for (const note of vault.getMarkdownFiles()) {
+		const text = await vault.cachedRead(note);
+		if (!text.includes("ink")) continue;
+		for (const f of findInkFences(text)) if (f.file && !where.has(normalizePath(f.file))) where.set(normalizePath(f.file), { notePath: note.path, line: f.open });
+	}
+	return inks.map((f) => ({ inkPath: f.path, notePath: where.get(f.path)?.notePath ?? null, line: where.get(f.path)?.line }));
 }

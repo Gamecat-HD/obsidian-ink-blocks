@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **v0.2.1**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich direkt auf den Kacheln, iPad-Modus, Linienabstand und Breiten je Fläche, Textmarker mit Lineal, Formerkennung (M9–M13). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus und simuliertem Stift; auf echter Stift-Hardware in Erprobung → [docs/HARDWARE.md](docs/HARDWARE.md).
+> Status: **v0.5.0**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich, iPad-Modus, Linienabstand, Textmarker mit Lineal, Formerkennung (M9–M14); Beam-Search mit Vault-Sprachmodell (M15); Lasso, präziser Radierer, Abdeckband, eigene Farben, Gesten/Zoom (M16–M20); Eingabeprofile für Tablets und Schreibtraining (M21–M24). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus, simuliertem Stift und Touch; Stift live auf dem HP-Laptop bestätigt → [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ## Bedienung
 
@@ -16,6 +16,10 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 | **OCR-Messung: Notiz mit 30 Testsätzen anlegen** / **auswerten** | Erkennungsqualität mit der eigenen Handschrift messen (Zeichenfehlerrate) |
 | **OCR-Debug: Segmentbilder dieser Notiz speichern** | Zeigt, wie das Modell die Handschrift „sieht“ (Bilder + erkannter Text) |
 | **Verwaiste Ink-Dateien finden** | `.ink`-Dateien ohne Block auflisten und auf Wunsch in den Papierkorb legen |
+| **Schreibtraining: Diktat** | 1–3 Wörter werden vorgegeben, du schreibst sie; jede Probe verbessert die Erkennung deiner Schrift (siehe unten) |
+| **Schreibtraining: Erkennung dieser Notiz überprüfen** | Erkannte Wörter einzeln mit ihren Strichen bestätigen oder korrigieren |
+| **Schreibtraining: Unsichere Wörter der letzten Schreibflächen überprüfen** | Dasselbe über die 25 zuletzt geänderten Flächen im Vault |
+| **Schreibtraining: Erkennung auf meine Schrift abstimmen** | Gewichte von Zweitmodell und Sprachmodell auf deine Proben abstimmen |
 | **Pen diagnostics** | Stift testen: Druck, Neigung, Radierer, Event-Rate |
 | **iPad-Modus umschalten** | Obsidian auf die Touch-Oberfläche umschalten und zurück (siehe unten) |
 
@@ -26,7 +30,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - **Abdeckband** (Pflaster-Knopf) zum Lernen wie in GoodNotes: Antworten abkleben, Tippen mit Stift oder Finger deckt auf bzw. wieder zu. Das Auge in der Leiste deckt alle Bänder auf bzw. zu. Aufgedeckt gilt nur für die laufende Sitzung; beim nächsten Öffnen ist wieder alles abgedeckt. Das Band deckt auch auf Arbeitsblättern und in der Lernplattform (dort per Klick aufdecken).
 - **Eigene Farben:** „+“ hinter den Farben öffnet den Farbwähler. Die Farbe wird je Werkzeug gemerkt (bis zu vier), Rechtsklick bzw. langes Drücken entfernt sie.
 - **Gesten:** mit zwei Fingern tippen = Rückgängig, mit drei Fingern = Wiederholen. Zwei Finger scrollen die Notiz.
-- Finger scrollen (Einstellung „Nur Stift zeichnet“).
+- Wer zeichnet, stellt **„Eingabe auf diesem Gerät“** ein (siehe unten „Tablets“): mit aktivem Stift scrollen Finger, ohne Stift zeichnen Finger und zwei Finger scrollen.
 - **Ausklappen** (Button ⤢ in der Leiste): öffnet dieselbe Fläche groß im Fenster, wie hineingezoomt. Ideal zum bequemen Schreiben und zum Ausfüllen von Arbeitsblättern. Dort lässt sich **zoomen** (100–300 %): mit zwei Fingern (Pinch, dabei auch verschieben), mit Strg+Mausrad bzw. Touchpad-Pinch oder mit den Lupen-Knöpfen; ein Klick auf die Prozentzahl setzt zurück. Die Leiste steht dabei fest oben. Esc oder ⤡ klappt wieder ein; alles landet sofort im Block.
 - **Eingebettete Bilder/PDFs:** Beim Überfahren erscheint „Beschriften“. Ein Klick macht daraus Arbeitsblatt-Flächen mit dem Bild bzw. der PDF-Seite als Hintergrund (bei PDFs Seite oder alle Seiten wählbar).
 - Die **Werkzeugleiste** erscheint über der Fläche, wenn man mit Maus oder Stift darüberfährt bzw. sobald der Block aktiv ist. Sie bietet Stift, Textmarker, Radierer, Farben, 3 Breiten (fein/mittel/breit), Rückgängig/Wiederholen und das **Hintergrund-Menü**: liniert, kariert, Punkteraster oder leer, dazu Linienabstand bzw. Kästchengröße nur für diese Fläche (Eng/Mittel/Weit bzw. Klein/Mittel/Groß, „Standard“ = aus den Einstellungen). **„Zeilenabstand einstellen …“** öffnet einen Schieberegler direkt unter dem Knopf: Die Fläche zeigt den Abstand schon beim Ziehen, „Fertig“/Enter/Klick daneben speichert ihn im Block (`gap:`), Esc verwirft.
@@ -43,6 +47,20 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Gilt nur für dieses Gerät (wird nicht synchronisiert). Notfalls in den Entwicklertools (Strg+Umschalt+I): `app.emulateMobile(false)`.
 - Tipp: Unter Einstellungen → Mobil → Werkzeugleiste „Schreibfläche einfügen“ aufnehmen.
 - Technik: nutzt Obsidians eingebaute, nicht offiziell dokumentierte Mobil-Emulation (`app.emulateMobile`).
+
+**Tablets (Android, iPad) und Geräte ohne aktiven Stift:**
+- Einstellungen → Ink Blocks → **Eingabe auf diesem Gerät**: „Stift zeichnet, Finger scrollen“, „Finger zeichnen, zwei Finger scrollen“ oder **Automatisch**. Automatisch lässt auf Tablets zunächst Finger (und passive Stifte, die sich wie Finger melden) zeichnen und schaltet beim **ersten echten Stiftkontakt** (S Pen, Apple Pencil, USI/MPP-Stift) auf „nur Stift“ um. Der Knopf ↺ daneben vergisst den Stift wieder.
+- Im Finger-Modus zählt eine große Kontaktfläche als Handballen und zeichnet nicht. Zwei Finger scrollen, Zwei-/Drei-Finger-Tipp = Rückgängig/Wiederholen.
+- Gilt je Gerät (liegt nicht in `data.json`, wird also nicht synchronisiert).
+- **Sparmodus auf diesem Gerät** (auf Tablets/Handys standardmäßig an): Die Texterkennung nimmt nur v2 in der kleinen int8-Fassung, ohne v1 als Zweitmodell – rund ein Viertel des Speichers.
+- Das Schreibtraining erreicht man dort über das **Hut-Symbol** in der Seitenleiste.
+
+**Schreibtraining** (verbessert die Erkennung deiner eigenen Schrift):
+- **Diktat:** Es erscheinen 1–3 Wörter – aus deinen Notizen, deinen Fachbegriffen, Wörter mit Umlauten/ß sowie Zahlen und IP-Adressen. Schreib sie auf die Fläche, **Weiter** (Enter) erkennt sie, zeigt das Ergebnis und legt Striche + Vorgabe als Probe ab. „Automatisch weiter“ geht nach einer kurzen Schreibpause von selbst weiter. Zeichen, die bei dir oft falsch gelesen werden, kommen häufiger dran.
+- **Überprüfen:** zeigt erkannte Wörter einzeln mit ihren Strichen (Nachbarwörter blass), die unsichersten zuerst. **Richtig**, Text ändern und **Übernehmen** (Enter; Vorschläge darunter antippen), **Kein Text** (Zeichnung, Gekritzel – fällt aus dem Text) oder **Überspringen**. Korrekturen stehen sofort im `text:` des Blocks und bleiben, bis sich die Striche ändern – auch wenn die Erkennung neu läuft.
+- **Lernen:** Korrigierte Wörter fließen ins Sprachmodell (wie Fachbegriffe), bestätigte einfach (Einstellung „Korrekturen lernen“).
+- **Abstimmen** (ab 20 Proben): sucht auf deinen Proben die besten Gewichte für v1 im Ensemble und das Sprachmodell. Jede fünfte Probe bleibt als Kontrolle draußen; übernommen wird nur, was dort nicht schlechter ist. ↺ in den Einstellungen setzt zurück.
+- Die Proben liegen in `<Ink-Ordner>/_training/samples-<Gerät>.jsonl` im Vault (je Gerät eine Datei, damit der Sync keine Konflikte erzeugt) und kommen so von allen Geräten zusammen.
 
 **Block-Syntax:**
 

@@ -11,6 +11,7 @@ import { shortId } from "../util/ids";
 import { ERASER_SIZES } from "../settingsData";
 import { eraserHits, splitStroke } from "./hitTest";
 import { MultiTouch, type Pinch } from "./MultiTouch";
+import { isPalmContact } from "./profile";
 import type { Selection } from "./Selection";
 
 const BUTTON_BARREL = 2;
@@ -146,10 +147,13 @@ export class PointerPipeline {
 		if (e.pointerType === "touch") {
 			// Handballen während bzw. kurz nach dem Schreiben: weder zeichnen noch scrollen.
 			if (this.penDown || now < this.penUntil) return;
+			const penOnly = this.plugin.penOnly;
+			// Finger zeichnen: eine große Kontaktfläche ist der aufgelegte Handballen.
+			if (!penOnly && isPalmContact(e.width, e.height)) return;
 			// Finger verschieben eine Auswahl auch, wenn nur der Stift zeichnet.
 			const at = this.surface.toDoc(e.clientX, e.clientY);
 			const onSelection = this.selection.hitFrame(at.x, at.y);
-			if (settings.penOnly && !onSelection) {
+			if (penOnly && !onSelection) {
 				this.capture(e, false);
 				this.gesture = { kind: "scroll", pointerId: e.pointerId, lastY: e.clientY, scroller: this.scroller(), x0: e.clientX, y0: e.clientY, t0: now };
 				return;
@@ -158,6 +162,7 @@ export class PointerPipeline {
 			if (!settings.mouseDraws || e.button !== 0) return;
 		} else if (e.pointerType === "pen") {
 			this.penDown = true;
+			this.plugin.penDetected();
 		}
 
 		this.capture(e);

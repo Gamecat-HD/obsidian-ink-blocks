@@ -1,5 +1,5 @@
 import type { HtrConfig } from "./preprocess";
-import type { DecoderSetup, PartnerModel, RecognizedSegment, WorkerSegment } from "./protocol";
+import type { DecoderSetup, PartnerModel, RecognizedSegment, TuneParams, TuneResult, TuneSample, WorkerSegment } from "./protocol";
 import { ORT_WASM, TESSERACT, type EngineId, type HtrSpec, type ModelStore } from "./models";
 import { rasterizeSegment } from "./raster";
 import { OcrWorker } from "./workerClient";
@@ -72,7 +72,7 @@ export class HtrEngine implements Engine {
 		this.worker = worker;
 	});
 
-	async recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
+	private async ready() {
 		await this.load();
 		if (this.decoder) {
 			const { gen, setup } = await this.decoder();
@@ -81,7 +81,17 @@ export class HtrEngine implements Engine {
 				this.decoderGen = gen;
 			}
 		}
+	}
+
+	async recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
+		await this.ready();
 		return this.worker!.recognize(segments);
+	}
+
+	/** Parameterraster auf beschrifteten Proben auszählen (siehe worker.ts `tune`). */
+	async tune(samples: TuneSample[], grid: TuneParams[]): Promise<TuneResult[]> {
+		await this.ready();
+		return this.worker!.tune(samples, grid);
 	}
 
 	dispose() {

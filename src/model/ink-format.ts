@@ -43,6 +43,8 @@ export interface OcrState {
 	lines: Record<string, string>;
 	/** Hash des zuletzt von uns geschriebenen `text:`-Inhalts. */
 	written: string;
+	/** Beim Überprüfen korrigierte Segmente (Schlüssel wie `lines`) – gelten auch nach einem Engine-Wechsel. */
+	fixed?: Record<string, string>;
 }
 
 export interface InkData {

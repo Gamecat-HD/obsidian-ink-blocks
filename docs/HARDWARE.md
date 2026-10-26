@@ -49,6 +49,16 @@ Am besten mit einem CachyOS-Live-USB direkt auf dem Gerät.
 | Move-Rate | ≥ 120 Hz |
 | Radierer (32) | ja (sonst Radierer nur über Werkzeugwahl) |
 
+## Android-Tablet (Obsidian Mobile)
+
+Seit v0.5.0 gibt es Eingabeprofile je Gerät (Einstellungen → Ink Blocks → **Eingabe auf diesem Gerät**). Auf echter Mobil-Hardware ist das Plugin noch **nicht getestet**; die E2E-Tests simulieren Touch nur über CDP.
+
+1. Plugin-Ordner `obsidian-ink-blocks` (`main.js`, `manifest.json`, `styles.css`) nach `<Vault>/.obsidian/plugins/` auf dem Tablet bringen. LiveSync synchronisiert den Plugin-Ordner nicht (`syncInternalFiles: false`), also per USB/Dateimanager kopieren und in den Community-Plugins aktivieren.
+2. Modelle in den Einstellungen herunterladen. Im **Sparmodus** (Vorgabe auf Mobilgeräten) reicht de-htr-web-v2 (int8, ~10 MB) plus ORT-Wasm (~14 MB).
+3. **Pen diagnostics** öffnen und mit Stift bzw. Finger schreiben: Meldet ein Stift `pointerType: pen`, Druck und Radierer? Passive Stifte (ohne Elektronik) melden sich als `touch`. Für sie gibt es das Profil „Finger zeichnen“.
+4. Profil **Automatisch** lassen: Ohne aktiven Stift zeichnen Finger, nach dem ersten Stiftstrich nur noch der Stift (mit Hinweis). Liegt der Handballen trotzdem auf, im Report die `width`/`height` der Berührungen ansehen; die Grenze für „Handballen“ liegt bei 40 CSS-px (`PALM_CONTACT_PX`).
+5. Ergebnis unten bei „Ergebnisse“ eintragen.
+
 ## Erkennungsqualität mit der eigenen Handschrift
 
 1. Befehl **„OCR-Messung: Notiz mit 30 Testsätzen anlegen“**
@@ -56,6 +66,8 @@ Am besten mit einem CachyOS-Live-USB direkt auf dem Gerät.
 3. Befehl **„OCR-Messung auswerten“**: Am Ende der Notiz erscheint eine Tabelle mit erkanntem Text und Zeichenfehlerrate (CER) pro Zeile sowie gesamt.
 4. Bei auffälligen Zeilen: **„OCR-Debug: Segmentbilder dieser Notiz speichern“**. Das zeigt, wie das Modell die Zeilen sieht (Zerlegung, Strichstärke, Größe).
 5. Gesamt-CER und Auffälligkeiten unten eintragen. Zum Vergleich: In den Benchmarks des Modells liegt de-htr-web-v2 bei ca. 8 % CER.
+
+Bequemer seit v0.5.0: **Schreibtraining** (Diktat und Überprüfen, siehe README). Die Proben landen in `_ink/_training/` und lassen sich mit `node scripts/bench/real.mjs --training <Vault>/_ink/_training --show` messen; ab 20 Proben stimmt „Auf meine Schrift abstimmen“ die Erkennung darauf ab.
 
 ## Ergebnisse
 

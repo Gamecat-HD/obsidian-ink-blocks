@@ -67,6 +67,24 @@ export interface InkSettings {
 	ocrHotwords: string;
 	/** Erkannten Text dezent unter dem Block anzeigen. */
 	showText: boolean;
+	/** Schreibtraining: bestätigte und korrigierte Wörter fließen ins Sprachmodell. */
+	ocrLearnCorrections: boolean;
+	/** Auf die eigene Schrift abgestimmte Dekoder-Werte (Schreibtraining); `null` = eingebaute Werte. */
+	ocrTuned: OcrTuning | null;
+}
+
+/** Ergebnis von „Erkennung auf meine Schrift abstimmen“ – gilt für den Schreiber, daher in `data.json`. */
+export interface OcrTuning {
+	/** Anteil von v1 im Ensemble */
+	weight: number;
+	alpha: number;
+	beta: number;
+	/** Anzahl Proben (davon Kontrolle) und Fehlerquote auf den Kontrollproben vorher/nachher */
+	samples: number;
+	holdout: number;
+	before: number;
+	after: number;
+	at: string;
 }
 
 export const DEFAULT_SETTINGS: InkSettings = {
@@ -91,6 +109,8 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	ocrLanguageModel: true,
 	ocrHotwords: "",
 	showText: true,
+	ocrLearnCorrections: true,
+	ocrTuned: null,
 };
 
 /** Grenzen der Einstellungs-Regler (Doc-Einheiten). */
@@ -135,5 +155,10 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	}
 	if (settings.eraserMode !== "precise") settings.eraserMode = "stroke";
 	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
+	const t = raw.ocrTuned;
+	settings.ocrTuned =
+		t && isNum(t.weight) && isNum(t.alpha) && isNum(t.beta)
+			? { ...t, weight: clamp(t.weight, [0, 0.95]), alpha: clamp(t.alpha, [0, 2]), beta: clamp(t.beta, [0, 5]) }
+			: null;
 	return settings;
 }

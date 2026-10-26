@@ -30,6 +30,12 @@ describe("Einstellungen", () => {
 		expect(s.tools.penColor).toBe("#112233");
 		expect(s.tools.hlColor).toBe(3);
 	});
+	it("Abstimmung: nur mit gültigen Zahlen, auf sinnvolle Grenzen gekappt", () => {
+		expect(normalizeSettings({}).ocrTuned).toBeNull();
+		expect(normalizeSettings({ ocrTuned: { weight: "x" } } as never).ocrTuned).toBeNull();
+		const t = normalizeSettings({ ocrTuned: { weight: 2, alpha: 0.5, beta: -1, samples: 30, holdout: 6, before: 0.1, after: 0.08, at: "2026-10-26" } }).ocrTuned;
+		expect(t).toMatchObject({ weight: 0.95, alpha: 0.5, beta: 0, samples: 30 });
+	});
 	it("Defaults werden nicht verändert", () => {
 		const s = normalizeSettings({});
 		s.penSizes[0] = 9;

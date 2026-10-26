@@ -280,3 +280,30 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
 - **M19 Farben/Papier:** `c` darf `#rrggbb` sein (`isInkColor`), eigene Farben je Werkzeug in `settings.customColors` (max. 4). `bgStyle: dots` mit Kästchenmaßen.
 - **M20 Gesten/Zoom:** `input/MultiTouch.ts` (Tippen ≤ 400 ms und ≤ 12 px; 2 Finger = Rückgängig, 3 = Wiederholen). Zoom nur in der ausgeklappten Ansicht (Breite × Zoom, Scroll-Anker bleibt unter Fingermitte bzw. Mauszeiger), dort steht die Leiste im Kopf.
 - **Formatänderung:** `tape` und Hex-Farben kennen ältere Plugin-Versionen nicht (`decodeInk` wirft) → auf allen Geräten v0.4 installieren. Die Lernplattform (`src/lib/ink.ts`) ist nachgezogen.
+
+### v0.5.0 (M21–M24): Tablets und Schreibtraining (Issue #1)
+
+- **M21 Eingabeprofil (`input/profile.ts`):**
+  - Je Gerät in `localStorage` (`ink-blocks-input-profile`: `pen` | `finger`, fehlt = automatisch), nicht in `data.json`. Der Sync würde sonst die Einstellung vom Laptop aufs Tablet tragen.
+  - `plugin.penOnly` ersetzt in der Pipeline `settings.penOnly`. Automatisch heißt: Stift schon gesehen (`ink-blocks-pen-seen`) → nur Stift; echte Mobil-App (`Platform.isMobileApp`, nicht die Emulation) ohne Stift → Finger zeichnen; Desktop → altes `settings.penOnly`.
+  - Der erste `pointerType: "pen"` setzt den Merker; schaltet das das Verhalten um, gibt es einen Hinweis.
+  - Finger-Modus: Kontaktfläche > 40 CSS-px (`PointerEvent.width/height`) = Handballen. Der zweite Finger bricht einen angefangenen Fingerstrich ab (vorhandene Logik in `touchDown`); zwei Finger scrollen bzw. tippen Rückgängig.
+  - **Sparmodus** je Gerät (`ink-blocks-ocr-lite`, Vorgabe an in der Mobil-App): v2 int8, kein v1-Zweitmodell.
+- **M22 Proben (`training/samples.ts`, `training/SampleStore.ts`):**
+  - JSONL unter `<Ink-Ordner>/_training/samples-<Geräte-ID>.jsonl`: Soll-Text (`null` = „kein Text“), Erkennung, Quelle (`dictation`/`review`), Engine-Version, Striche (wie `.ink` codiert), Referenzhöhe, Wort-Kennung `key`.
+  - Eine Datei je Gerät, damit gleichzeitiges Sammeln auf Laptop und Tablet keinen Sync-Konflikt erzeugt. Gelesen werden alle; bei gleichem `key` gilt die letzte Probe.
+  - Holdout fest nach ID (`fnv1a(id) % 5 === 0`). Holdout-Proben fließen weder ins LM noch in die Wahl der Parameter.
+- **M23 Diktat (`ui/TrainingModals.ts`, `training/prompts.ts`):**
+  - Eigener `InkEntry` nur im Speicher (Pfad leer); `InkEditor` funktioniert damit unverändert, `store.touch` ignoriert ihn.
+  - Vorgaben: 55 % Vault-Wörter (√Häufigkeit), 15 % Fachbegriffe, 15 % Grundstock mit Umlauten/ß, 15 % Zahlen/Adressen. Gewicht × (1 + 4·Fehlerquote) je enthaltenem schwachen Zeichen (`weakChars`, Levenshtein-Rückverfolgung über alle Proben).
+  - Die Erkennung läuft nach „Weiter“ im Hintergrund, die nächste Vorgabe erscheint sofort.
+- **M24 Überprüfen (`ocr/align.ts`, `training/review.ts`):**
+  - Worker: `detail` am Segment liefert Wörter und Alternativen. Die Wörter kommen aus einer erzwungenen CTC-Ausrichtung (Viterbi) des Endtextes auf das Hauptmodell: Zeitschritte je Zeichen, Konfidenz = kleinste Spitzenwahrscheinlichkeit eines Zeichens. Zeitschritt → x im Zeilenbild (`output_stride`) → Doc-Einheiten über die Rastertransformation; Wortgrenzen liegen in der Mitte der Lücke.
+  - Striche gehören zu dem Wort, in dessen x-Bereich ihre Box-Mitte liegt. Wort-Alternativen stammen aus den N-Best-Lesarten des Segments mit gleicher Wortzahl.
+  - Korrektur → `ocr.fixed[segKey]` im `.ink`. Feste Segmente werden nicht neu erkannt und überstehen Engine-Wechsel; sie fallen weg, sobald sich die Striche des Segments ändern (neuer Schlüssel). Älteren Versionen und der Lernplattform ist das Feld egal.
+  - Korrigierte Wörter gehen 10-fach ins LM, bestätigte einfach.
+- **Abstimmen (`training/tuning.ts`, Worker-Nachricht `tune`):**
+  - Jede Probe geht einmal durch beide Modelle; danach wird je Rasterpunkt (v1-Anteil 0/0,3/0,5/0,7/0,85 × α 4 Werte × β 4 Werte) nur decodiert. 27 Proben × 80 Punkte dauern im E2E-Test etwa 23 s.
+  - Gewählt wird auf den Abstimmproben, übernommen nur bei weniger Fehlern UND nicht schlechterem Holdout. Die Werte stehen in `settings.ocrTuned` (gelten für den Schreiber, deshalb synchronisiert).
+  - `scripts/bench/real.mjs --training <Vault>/_ink/_training` misst zusätzlich auf den gesammelten Proben.
+- **Bewusst noch nicht umgesetzt: Kopf-Training** (eigener CTC-Ausgabelayer in TS, siehe Recherche Nr. 6). Es braucht erst echte Proben (30–50+ Zeilen) und einen einmalig um einen Feature-Ausgang erweiterten ONNX-Graphen. Proben, Holdout und die Worker-Schnittstelle dafür sind jetzt vorhanden; wenn das Abstimmen mit genug Proben nichts mehr bringt, ist das der nächste Schritt.

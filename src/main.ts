@@ -1,7 +1,8 @@
-import { debounce, getIconIds, loadPdfJs, Plugin, TFile, type TAbstractFile } from "obsidian";
+import { debounce, getIconIds, loadPdfJs, Notice, Platform, Plugin, TFile, type TAbstractFile } from "obsidian";
 import { InkBlockChild } from "./block/InkBlockChild";
 import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
+import { markPenSeen, penSeen, resolvePenOnly, storedProfile } from "./input/profile";
 import type { InkClipboard } from "./input/Selection";
 import { OcrService } from "./ocr/OcrService";
 import { rasterizeSegment } from "./ocr/raster";
@@ -13,11 +14,15 @@ import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
 import { InkSettingTab, normalizeSettings, type InkSettings } from "./settings";
 import { InkStore, type InkEntry } from "./store/InkStore";
+import { SampleStore } from "./training/SampleStore";
+import { runTuning } from "./training/runTuning";
 
 export default class InkBlocksPlugin extends Plugin {
 	declare settings: InkSettings;
 	store!: InkStore;
 	ocr!: OcrService;
+	/** Proben des Schreibtrainings */
+	training!: SampleStore;
 	readonly blocks = new Set<InkBlockChild>();
 	/** Alle offenen Zeichenansichten (Blöcke und ausgeklappte Ansicht). */
 	readonly editors = new Set<InkEditor>();
@@ -31,10 +36,12 @@ export default class InkBlocksPlugin extends Plugin {
 		unloaded: number;
 		rewriteUrl?: (url: string) => string;
 		ocr: typeof ocrInternals;
+		training: { runTuning: typeof runTuning };
 	} = {
 		loadPdfJs,
 		getIconIds,
 		ocr: ocrInternals,
+		training: { runTuning },
 		loaded: 0,
 		unloaded: 0,
 	};
@@ -42,6 +49,7 @@ export default class InkBlocksPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 		this.store = new InkStore(this);
+		this.training = new SampleStore(this);
 		this.ocr = new OcrService(this);
 
 		this.registerMarkdownCodeBlockProcessor("ink", (source, el, ctx) => {
@@ -68,6 +76,18 @@ export default class InkBlocksPlugin extends Plugin {
 		this.saveSoon.run();
 		this.ocr.dispose();
 		this.store.dispose();
+	}
+
+	/** Zeichnet auf diesem Gerät nur der Stift (Finger scrollen)? Siehe input/profile.ts. */
+	get penOnly(): boolean {
+		return resolvePenOnly(storedProfile(), penSeen(), Platform.isMobileApp, this.settings.penOnly);
+	}
+
+	/** Erster Stiftkontakt auf diesem Gerät: schaltet „Automatisch“ von Finger auf Stift um. */
+	penDetected() {
+		const before = this.penOnly;
+		if (!markPenSeen() || before === this.penOnly) return;
+		new Notice("Stift erkannt: Ab jetzt schreibt nur der Stift, Finger scrollen. Ändern unter Einstellungen → Ink Blocks → Eingabe.", 8000);
 	}
 
 	async loadSettings() {

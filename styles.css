@@ -712,3 +712,138 @@
 	width: 14px;
 	height: 14px;
 }
+
+/* ---- Schreibtraining (Diktat, Überprüfen) ---- */
+
+.modal.ink-training-modal {
+	width: min(900px, 96vw);
+	max-width: 96vw;
+}
+
+.ink-training-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.ink-training-prompt {
+	font-size: 2em;
+	font-weight: var(--font-semibold);
+	text-align: center;
+	padding: var(--size-4-2) 0 0;
+	overflow-wrap: anywhere;
+}
+
+.ink-training-hint,
+.ink-training-stats {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-align: center;
+}
+
+.ink-training-surface {
+	margin: 0;
+}
+
+.ink-training-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	flex-wrap: wrap;
+}
+
+.ink-training-actions button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.ink-training-spacer {
+	flex: 1;
+}
+
+.ink-training-auto {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.ink-training-icon {
+	display: inline-flex;
+}
+
+.ink-training-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.ink-training-feedback {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 3.6em;
+	font-size: var(--font-ui-small);
+}
+
+.ink-training-result {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	flex-wrap: wrap;
+}
+
+.ink-training-result:not(:first-child) {
+	opacity: 0.6;
+}
+
+.ink-training-result.is-right .ink-training-icon {
+	color: var(--color-green);
+}
+
+.ink-training-result.is-wrong .ink-training-icon {
+	color: var(--color-red);
+}
+
+.ink-training-got {
+	font-family: var(--font-monospace);
+}
+
+.ink-review-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.ink-review-preview {
+	width: 100%;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-primary);
+}
+
+.ink-review-input {
+	font-size: 1.4em;
+	text-align: center;
+	width: 100%;
+}
+
+.ink-review-alts {
+	display: flex;
+	gap: var(--size-2-2);
+	flex-wrap: wrap;
+	justify-content: center;
+	min-height: 0;
+}
+
+.ink-review-alt {
+	font-family: var(--font-monospace);
+}
+
+/* Auf dem Tablet: größere Knöpfe für Finger und Stift. */
+.is-mobile .ink-training-actions button {
+	min-height: 44px;
+	padding: 0 var(--size-4-3);
+}

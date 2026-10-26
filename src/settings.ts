@@ -1,5 +1,11 @@
 import { normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
+import { forgetPen, penSeen, PROFILE_LABELS, setStoredProfile, storedProfile, type InputProfile } from "./input/profile";
 import type InkBlocksPlugin from "./main";
+import { ocrLite, setOcrLite } from "./ocr/OcrService";
+import { resetTuning, runTuning } from "./training/runTuning";
+import { sampleStats } from "./training/samples";
+import { MIN_TUNE_SAMPLES } from "./training/tuning";
+import { DictationModal } from "./ui/TrainingModals";
 import { ENGINE_ORDER, ENGINES, engineFiles, HTR_V1, HTR_V2, HTR_V2_FP32, type EngineId, type EngineSpec } from "./ocr/models";
 import type { BgStyle } from "./model/pattern";
 import { DEFAULT_SETTINGS, LIMITS, type InkSettings, type WidthSizes } from "./settingsData";
@@ -55,7 +61,33 @@ export class InkSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName("Eingabe").setHeading();
 		this.toggle("Formen erkennen", "Linie, Rechteck, Dreieck oder Kreis zeichnen und am Ende den Stift kurz ruhig halten – daraus wird eine saubere Form.", "shapeRecognition");
-		this.toggle("Nur Stift zeichnet", "Finger scrollen die Notiz statt zu zeichnen (Handballen werden ignoriert).", "penOnly");
+		const profileDesc = () =>
+			`Gilt nur für dieses Gerät. Automatisch: Sobald ein aktiver Stift (z. B. S Pen, Apple Pencil, HP-Stift) schreibt, zeichnet nur noch der Stift; ` +
+			`auf Tablets ohne Stift zeichnen Finger bzw. passive Stifte. Gerade aktiv: ${this.plugin.penOnly ? "nur der Stift zeichnet" : "Finger zeichnen"}` +
+			`${penSeen() ? " (Stift erkannt)" : ""}.`;
+		const profile = new Setting(containerEl)
+			.setName("Eingabe auf diesem Gerät")
+			.setDesc(profileDesc())
+			.addDropdown((dd) =>
+				dd
+					.addOptions(PROFILE_LABELS)
+					.setValue(storedProfile())
+					.onChange((v) => {
+						setStoredProfile(v as InputProfile);
+						profile.setDesc(profileDesc());
+					}),
+			);
+		if (penSeen()) {
+			profile.addExtraButton((b) =>
+				b
+					.setIcon("rotate-ccw")
+					.setTooltip("Stift vergessen (Automatisch lässt dann wieder Finger zeichnen)")
+					.onClick(() => {
+						forgetPen();
+						this.display();
+					}),
+			);
+		}
 		this.toggle("Maus zeichnet", "Mit gedrückter linker Maustaste schreiben.", "mouseDraws");
 		this.toggle("Seitentaste radiert", "Die Taste am Stift wirkt als Radierer.", "barrelErases");
 
@@ -78,6 +110,15 @@ export class InkSettingTab extends PluginSettingTab {
 						this.plugin.settings.ocrDelay = v;
 						await this.plugin.saveSettings();
 					}),
+			);
+		new Setting(containerEl)
+			.setName("Sparmodus auf diesem Gerät")
+			.setDesc("Nur de-htr-web-v2 in der kleinen Fassung (int8), ohne v1 als Zweitmodell: braucht etwa ein Viertel des Speichers, erkennt etwas schlechter. Auf Tablets und Handys standardmäßig an.")
+			.addToggle((t) =>
+				t.setValue(ocrLite()).onChange((v) => {
+					setOcrLite(v);
+					this.plugin.ocr.reset();
+				}),
 			);
 		new Setting(containerEl)
 			.setName("Erkennungs-Engine")
@@ -111,6 +152,9 @@ export class InkSettingTab extends PluginSettingTab {
 						this.plugin.ocr.invalidateCorpus();
 					}),
 			);
+		this.trainingSection(containerEl);
+
+		new Setting(containerEl).setName("Modelle").setHeading();
 		const rows: [EngineSpec, string, boolean][] = [
 			[HTR_V2, "Empfohlen. ", true],
 			[HTR_V2_FP32, "Empfohlen: dasselbe Modell ungerechnet – 3–4× schnellere Erkennung, gleich genau. ", true],
@@ -118,6 +162,52 @@ export class InkSettingTab extends PluginSettingTab {
 			[ENGINES.tesseract, "Optional (letzte Ausweich-Engine). ", false],
 		];
 		for (const [spec, hint, cta] of rows) this.modelSetting(containerEl, spec, hint, cta);
+	}
+
+	private trainingSection(containerEl: HTMLElement) {
+		new Setting(containerEl).setName("Schreibtraining").setHeading();
+		const stats = new Setting(containerEl)
+			.setName("Proben")
+			.setDesc("Wird gezählt …")
+			.addButton((b) => b.setButtonText("Diktat").onClick(() => new DictationModal(this.plugin).open()));
+		void this.plugin.training.load().then((samples) => {
+			const s = sampleStats(samples);
+			const cer = s.count ? ` Die Erkennung lag dabei bei ${(s.cer * 100).toFixed(1).replace(".", ",")} % Fehlern.` : "";
+			stats.setDesc(
+				`${s.count} Proben (${s.dictation} aus dem Diktat, ${s.review} überprüft), gespeichert in ${this.plugin.training.folder} – synchronisiert mit dem Vault.${cer} ` +
+					"Überprüfen geht über die Befehle „Schreibtraining: …“ oder das Hut-Symbol in der Seitenleiste.",
+			);
+		});
+		this.toggle("Korrekturen lernen", "Bestätigte und korrigierte Wörter fließen ins Sprachmodell – korrigierte zählen wie Fachbegriffe.", "ocrLearnCorrections", () =>
+			this.plugin.ocr.invalidateCorpus(),
+		);
+		const t = this.plugin.settings.ocrTuned;
+		const pct = (v: number) => `${(v * 100).toFixed(1).replace(".", ",")} %`;
+		const tune = new Setting(containerEl)
+			.setName("Auf meine Schrift abstimmen")
+			.setDesc(
+				t
+					? `Abgestimmt am ${new Date(t.at).toLocaleDateString()} mit ${t.samples} Proben: Fehler ${pct(t.before)} → ${pct(t.after)} (v1-Anteil ${t.weight}, α ${t.alpha}, β ${t.beta}).`
+					: `Sucht mit deinen Proben die besten Gewichte für Zweitmodell und Sprachmodell; übernommen wird nur, was auf zurückgehaltenen Kontrollproben nicht schlechter ist. Ab ${MIN_TUNE_SAMPLES} Proben.`,
+			)
+			.addButton((b) =>
+				b.setButtonText("Abstimmen").onClick(async () => {
+					b.setDisabled(true);
+					await runTuning(this.plugin);
+					this.display();
+				}),
+			);
+		if (t) {
+			tune.addExtraButton((b) =>
+				b
+					.setIcon("rotate-ccw")
+					.setTooltip("Zurück zu den eingebauten Werten")
+					.onClick(async () => {
+						await resetTuning(this.plugin);
+						this.display();
+					}),
+			);
+		}
 	}
 
 	private modelSetting(containerEl: HTMLElement, spec: EngineSpec, hint: string, cta: boolean) {
@@ -189,7 +279,7 @@ export class InkSettingTab extends PluginSettingTab {
 	private toggle(
 		name: string,
 		desc: string,
-		key: "penOnly" | "mouseDraws" | "barrelErases" | "ocrEnabled" | "ocrLanguageModel" | "showText" | "hlStraight" | "shapeRecognition",
+		key: "mouseDraws" | "barrelErases" | "ocrEnabled" | "ocrLanguageModel" | "showText" | "hlStraight" | "shapeRecognition" | "ocrLearnCorrections",
 		after?: () => void,
 	) {
 		new Setting(this.containerEl)

@@ -3,12 +3,15 @@
  * OffscreenCanvas und erkennt sie mit onnxruntime-web (Wasm, ein Thread).
  */
 import * as ort from "onnxruntime-web/wasm";
+import { alignWords } from "./align";
+import { editDistance } from "./benchmark";
 import { ctcBeamCandidates, ctcBeamSearch, ctcLogLikelihood, prefixScore, type BeamOptions } from "./beam";
 import { ctcGreedy } from "./ctc";
 import { buildCharLm } from "./lm";
 import { toTensor, type HtrConfig } from "./preprocess";
 import { rasterizeSegment } from "./raster";
-import type { DecoderSetup, WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
+import type { DecoderSetup, RecognizedSegment, RecognizedWord, TuneParams, TuneResult, TuneSample, WorkerRequest, WorkerResponse, WorkerSegment } from "./protocol";
+import type { RasterTransform } from "./preprocess";
 
 interface WorkerScope {
 	onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
@@ -36,7 +39,7 @@ function setupDecoder(setup: DecoderSetup | null, cfg: HtrConfig) {
 function rasterize(seg: WorkerSegment, cfg: HtrConfig) {
 	const { canvases, t } = rasterizeSegment(seg, cfg.image_height, cfg.max_width);
 	const images = canvases.map(({ ctx }) => ctx.getImageData(0, 0, t.width, cfg.image_height).data);
-	return { images, width: t.width, contentWidth: t.contentWidth };
+	return { images, width: t.width, contentWidth: t.contentWidth, t };
 }
 
 /** Log-Softmax je Zeitschritt (Ausgabe [.., T, C] flach, Schritt t ab t·C). */
@@ -81,13 +84,23 @@ function remap(other: Float32Array, Cp: number, map: Int32Array, T: number, C: n
 /** So viele Kandidaten je Modell gehen ins Rescoring. */
 const NBEST = 8;
 
+/** Dekodier-Ergebnis mit den Lesarten, beste zuerst (fürs Überprüfen). */
+interface Decoded {
+	text: string;
+	confidence: number;
+	ranked: string[];
+}
+
+const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+const NO_BEAM: BeamOptions = { lm: null, alpha: 0, beta: 0, beamWidth: 16, grammar: false };
+
 /**
  * Ensemble per N-Best-Rescoring: Kandidaten beider Modelle sammeln und jeden mit der CTC-Wahrscheinlichkeit
  * beider Modelle (Summe über alle Ausrichtungen – die Modelle setzen ihre Spitzen zu verschiedenen Zeitpunkten,
  * deshalb kein Mischen je Zeitschritt) plus LM bewerten: (1−w)·log P₁ + w·log P₂ + α·log P_lm + β·|Text|.
  */
-function ensembleDecode(a: Float32Array, b: Float32Array, dims: number[], cfg: HtrConfig, w: number, validSteps: number) {
-	const o: BeamOptions = { ...(beam ?? { lm: null, alpha: 0, beta: 0, beamWidth: 16, grammar: false }), blank: cfg.blank_index, validSteps };
+function ensembleDecode(a: Float32Array, b: Float32Array, dims: number[], cfg: HtrConfig, w: number, validSteps: number, decoder: BeamOptions | null): Decoded {
+	const o: BeamOptions = { ...(decoder ?? NO_BEAM), blank: cfg.blank_index, validSteps };
 	const texts = new Set<string>();
 	let confidence = 0;
 	for (const data of [a, b]) {
@@ -95,45 +108,105 @@ function ensembleDecode(a: Float32Array, b: Float32Array, dims: number[], cfg: H
 		confidence += r.confidence / 2;
 		for (const c of r.candidates.slice(0, NBEST)) texts.add(c.text);
 	}
-	let best = "";
-	let bestScore = -Infinity;
 	const ctc = { blank: cfg.blank_index, validSteps };
-	for (const text of texts) {
-		const score =
+	const scored = [...texts].map((text) => ({
+		text,
+		score:
 			(1 - w) * ctcLogLikelihood(a, dims, cfg.alphabet, text, ctc) +
 			w * ctcLogLikelihood(b, dims, cfg.alphabet, text, ctc) +
-			prefixScore(text, cfg.alphabet, o);
-		if (score > bestScore) {
-			bestScore = score;
-			best = text;
-		}
-	}
-	return { text: best.replace(/\s+/g, " ").trim(), confidence };
+			prefixScore(text, cfg.alphabet, o),
+	}));
+	scored.sort((x, y) => y.score - x.score);
+	const ranked = [...new Set(scored.map((c) => norm(c.text)))];
+	return { text: ranked[0] ?? "", confidence, ranked };
 }
 
-async function recognize(segments: WorkerSegment[]) {
+/** Ein Modell allein: Beam-Search (mit LM) bzw. Greedy ohne Dekoder. */
+function singleDecode(lp: Float32Array, dims: number[], cfg: HtrConfig, validSteps: number, decoder: BeamOptions | null, ranked: boolean): Decoded {
+	const opts = { blank: cfg.blank_index, validSteps };
+	if (!decoder) {
+		const r = ctcGreedy(lp, dims, cfg.alphabet, opts);
+		return { ...r, ranked: [r.text] };
+	}
+	if (!ranked) {
+		const r = ctcBeamSearch(lp, dims, cfg.alphabet, { ...decoder, ...opts });
+		return { ...r, ranked: [r.text] };
+	}
+	const { candidates, confidence } = ctcBeamCandidates(lp, dims, cfg.alphabet, { ...decoder, ...opts });
+	const list = [...new Set(candidates.map((c) => norm(c.text)))];
+	return { text: list[0] ?? "", confidence, ranked: list };
+}
+
+/** Beide Modelle auf einem Segment: Log-Wahrscheinlichkeiten (Zweitmodell aufs Alphabet des Hauptmodells). */
+async function logits(seg: WorkerSegment, cfg: HtrConfig) {
+	const { images, width, contentWidth, t } = rasterize(seg, cfg);
+	const main = await runModel(session!, cfg, images, width);
+	const C = main.dims[main.dims.length - 1];
+	const dims = [1, main.T, C];
+	const validSteps = Math.ceil(contentWidth / cfg.output_stride);
+	const other = partner ? await runModel(partner.session, partner.config, images, width) : null;
+	// Gleiche Schrittweite → gleich viele Zeitschritte; sonst lieber nur das Hauptmodell.
+	const mapped = partner && other && other.T === main.T ? remap(other.lp, other.dims[other.dims.length - 1], partner.map, main.T, C) : null;
+	return { main: main.lp, mapped, dims, validSteps, t };
+}
+
+function decode(l: Awaited<ReturnType<typeof logits>>, cfg: HtrConfig, weight: number, decoder: BeamOptions | null, ranked: boolean): Decoded {
+	if (l.mapped && weight > 0) return ensembleDecode(l.main, l.mapped, l.dims, cfg, weight, l.validSteps, decoder);
+	return singleDecode(l.main, l.dims, cfg, l.validSteps, decoder, ranked);
+}
+
+/** Wörter des Textes mit Position in Doc-Einheiten (Zeitschritt → x im Zeilenbild → Doc). */
+function words(lp: Float32Array, dims: number[], cfg: HtrConfig, text: string, validSteps: number, t: RasterTransform): RecognizedWord[] | undefined {
+	const aligned = alignWords(lp, dims, cfg.alphabet, text, { blank: cfg.blank_index, validSteps });
+	if (!aligned) return undefined;
+	const toDoc = (step: number) => (step * cfg.output_stride - t.offsetX) / t.scale;
+	return aligned.map((w) => ({ text: w.text, conf: w.conf, x0: toDoc(w.start), x1: toDoc(w.end) }));
+}
+
+async function recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
 	if (!session || !config) throw new Error("Worker nicht initialisiert");
 	const cfg = config;
-	const results: { text: string; confidence: number; ms: number }[] = [];
+	const results: RecognizedSegment[] = [];
 	for (const seg of segments) {
 		const t0 = performance.now();
-		const { images, width, contentWidth } = rasterize(seg, cfg);
-		const main = await runModel(session, cfg, images, width);
-		const C = main.dims[main.dims.length - 1];
-		const dims = [1, main.T, C];
-		const opts = { blank: cfg.blank_index, validSteps: Math.ceil(contentWidth / cfg.output_stride) };
-		let r: { text: string; confidence: number };
-		const other = partner ? await runModel(partner.session, partner.config, images, width) : null;
-		// Gleiche Schrittweite → gleich viele Zeitschritte; sonst lieber nur das Hauptmodell.
-		if (partner && other && other.T === main.T) {
-			const mapped = remap(other.lp, other.dims[other.dims.length - 1], partner.map, main.T, C);
-			r = ensembleDecode(main.lp, mapped, dims, cfg, partner.weight, opts.validSteps);
-		} else {
-			r = beam ? ctcBeamSearch(main.lp, dims, cfg.alphabet, { ...beam, ...opts }) : ctcGreedy(main.lp, dims, cfg.alphabet, opts);
+		const l = await logits(seg, cfg);
+		const r = decode(l, cfg, partner?.weight ?? 0, beam, !!seg.detail);
+		const out: RecognizedSegment = { text: r.text, confidence: r.confidence, ms: 0 };
+		if (seg.detail) {
+			out.words = words(l.main, l.dims, cfg, r.text, l.validSteps, l.t);
+			out.alts = r.ranked.filter((x) => x !== r.text).slice(0, 4);
 		}
-		results.push({ ...r, ms: performance.now() - t0 });
+		out.ms = performance.now() - t0;
+		results.push(out);
 	}
 	return results;
+}
+
+/**
+ * Abstimmen auf die eigene Schrift: jede Probe einmal durch die Modelle, dann je Parameterkombination
+ * decodieren (Beam-Search ist billig gegen das Modell) und die Editierdistanz zählen – getrennt nach
+ * Abstimm- und Kontrollproben.
+ */
+async function tune(samples: TuneSample[], grid: TuneParams[]): Promise<TuneResult[]> {
+	if (!session || !config) throw new Error("Worker nicht initialisiert");
+	const cfg = config;
+	const prepared: { l: Awaited<ReturnType<typeof logits>>[]; text: string; holdout: boolean }[] = [];
+	for (const s of samples) {
+		const l = [];
+		for (const seg of s.segs) l.push(await logits(seg, cfg));
+		prepared.push({ l, text: norm(s.text), holdout: s.holdout });
+	}
+	return grid.map((params) => {
+		const decoder: BeamOptions | null = beam ? { ...beam, alpha: params.alpha, beta: beam.lm ? params.beta : 0 } : null;
+		const result: TuneResult = { params, tune: { errors: 0, chars: 0 }, holdout: { errors: 0, chars: 0 } };
+		for (const p of prepared) {
+			const got = norm(p.l.map((l) => decode(l, cfg, params.weight, decoder, false).text).join(" "));
+			const bucket = p.holdout ? result.holdout : result.tune;
+			bucket.errors += editDistance(p.text, got);
+			bucket.chars += Array.from(p.text).length;
+		}
+		return result;
+	});
 }
 
 scope.onmessage = async ({ data }) => {
@@ -165,6 +238,8 @@ scope.onmessage = async ({ data }) => {
 			if (!config) throw new Error("Worker nicht initialisiert");
 			setupDecoder(data.setup, config);
 			scope.postMessage({ id: data.id, ok: true, result: null });
+		} else if (data.type === "tune") {
+			scope.postMessage({ id: data.id, ok: true, result: await tune(data.samples, data.grid) });
 		} else {
 			scope.postMessage({ id: data.id, ok: true, result: await recognize(data.segments) });
 		}
