@@ -23,6 +23,15 @@ export interface LiveStroke {
 	simulated?: boolean;
 }
 
+/** Position von Stift/Maus über einer Fläche (Doc-Einheiten). */
+export interface PointerPos {
+	x: number;
+	y: number;
+	kind: "pen" | "mouse" | "touch";
+	/** Zeichnet gerade (Stift/Maus unten) */
+	down?: boolean;
+}
+
 export interface RemoteLabel {
 	name: string;
 	/** CSS-Farbe der Person (Namensschild) */
@@ -30,6 +39,7 @@ export interface RemoteLabel {
 }
 
 type LiveListener = (file: string, stroke: LiveStroke | null) => void;
+type PointerListener = (file: string, pos: PointerPos | null) => void;
 type CommitListener = (file: string) => void;
 
 interface Ghost {
@@ -46,6 +56,9 @@ export class InkApi {
 	readonly version = 1;
 	private live = new Set<LiveListener>();
 	private commits = new Set<CommitListener>();
+	private pointerListeners = new Set<PointerListener>();
+	/** Datei → Schlüssel → fremder Zeiger */
+	private pointers = new Map<string, Map<string, { pos: PointerPos; label: RemoteLabel }>>();
 	/** Datei → Schlüssel (z. B. Person) → Geist */
 	private ghosts = new Map<string, Map<string, Ghost>>();
 	private sweepTimer = 0;
@@ -56,6 +69,39 @@ export class InkApi {
 	onLiveStroke(fn: LiveListener): () => void {
 		this.live.add(fn);
 		return () => this.live.delete(fn);
+	}
+
+	/** Eigene Stift-/Mausposition über einer Fläche (`null` = Fläche verlassen). Feuert bei jeder Bewegung – selbst drosseln. */
+	onPointer(fn: PointerListener): () => void {
+		this.pointerListeners.add(fn);
+		return () => this.pointerListeners.delete(fn);
+	}
+
+	/** Fremden Zeiger (Stift/Maus) mit Namen zeigen; `null` = entfernen. */
+	setRemotePointer(file: string, key: string, pos: PointerPos | null, label?: RemoteLabel) {
+		let byKey = this.pointers.get(file);
+		if (pos) {
+			if (!byKey) this.pointers.set(file, (byKey = new Map()));
+			byKey.set(key, { pos, label: label ?? byKey.get(key)?.label ?? { name: "", color: "#888" } });
+		} else {
+			if (!byKey?.delete(key)) return;
+			if (!byKey.size) this.pointers.delete(file);
+		}
+		this.render(file);
+	}
+
+	pointersFor(file: string): { key: string; pos: PointerPos; label: RemoteLabel }[] {
+		return [...(this.pointers.get(file) ?? [])].map(([key, p]) => ({ key, pos: p.pos, label: p.label }));
+	}
+
+	emitPointer(file: string, pos: PointerPos | null) {
+		for (const fn of this.pointerListeners) {
+			try {
+				fn(file, pos);
+			} catch (e) {
+				console.warn("[ink-blocks] api.onPointer", e);
+			}
+		}
 	}
 
 	/** Nach jeder abgeschlossenen Änderung an einer Fläche (Strich, Radieren, Lasso, Undo …). */
@@ -90,11 +136,15 @@ export class InkApi {
 		this.scheduleSweep();
 	}
 
-	/** Alle Geister einer Person entfernen (z. B. offline gegangen). */
+	/** Alle Geister und Zeiger einer Person entfernen (z. B. offline gegangen). */
 	clearRemote(key: string) {
-		for (const [file, byKey] of this.ghosts) {
-			if (byKey.delete(key)) this.render(file);
+		const files = new Set<string>();
+		for (const [file, byKey] of this.ghosts) if (byKey.delete(key)) files.add(file);
+		for (const [file, byKey] of this.pointers) {
+			if (byKey.delete(key)) files.add(file);
+			if (!byKey.size) this.pointers.delete(file);
 		}
+		for (const f of files) this.render(f);
 	}
 
 	// ── intern (von Ink Blocks selbst aufgerufen) ──────────────────────
@@ -131,6 +181,8 @@ export class InkApi {
 	destroy() {
 		window.clearTimeout(this.sweepTimer);
 		this.ghosts.clear();
+		this.pointers.clear();
+		this.pointerListeners.clear();
 		this.live.clear();
 		this.commits.clear();
 	}
@@ -156,7 +208,8 @@ export class InkApi {
 
 	private render(file: string) {
 		const ghosts = this.ghostsFor(file);
-		for (const ed of this.plugin.editors) if (ed.entry.path === file) ed.surface.drawRemote(ghosts);
+		const pointers = this.pointersFor(file);
+		for (const ed of this.plugin.editors) if (ed.entry.path === file) ed.surface.drawRemote(ghosts, pointers);
 	}
 
 	private scheduleSweep() {

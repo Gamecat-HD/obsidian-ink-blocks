@@ -1,7 +1,7 @@
 import type { InkColor, InkData } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
 import type { Pattern } from "../model/pattern";
-import type { LiveStroke as ApiLiveStroke, RemoteLabel } from "../api";
+import type { LiveStroke as ApiLiveStroke, PointerPos, RemoteLabel } from "../api";
 import { HL_ALPHA, outlineSvg, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
 import { scaleFor, tileLayout, tilesForBounds, type Tile } from "./transform";
 
@@ -60,6 +60,7 @@ export class Surface {
 	/** Fremde, gerade entstehende Striche (Zusammenarbeit, siehe api.ts). */
 	private readonly remoteGroup: SVGGElement;
 	private remoteGhosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[] = [];
+	private remotePointers: { key: string; pos: PointerPos; label: RemoteLabel }[] = [];
 	private readonly stripesId = `ink-tape-stripes-${++tapeIds}`;
 	private scale = 1;
 	private cssWidth = 0;
@@ -161,8 +162,9 @@ export class Surface {
 	}
 
 	/** Fremde, gerade entstehende Striche halbtransparent mit Namensschild zeigen. */
-	drawRemote(ghosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[]) {
+	drawRemote(ghosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[], pointers: { key: string; pos: PointerPos; label: RemoteLabel }[] = []) {
 		this.remoteGhosts = ghosts;
+		this.remotePointers = pointers;
 		this.renderRemote();
 	}
 
@@ -170,6 +172,7 @@ export class Surface {
 		const nodes: SVGElement[] = [];
 		// Schrift in CSS-px, unabhängig vom Zoom der Fläche
 		const fs = 11 / (this.scale || 1);
+		const withPointer = new Set(this.remotePointers.map((p) => p.key));
 		for (const { key, stroke, label } of this.remoteGhosts) {
 			const p = stroke.points;
 			if (p.length < 3) continue;
@@ -184,7 +187,8 @@ export class Surface {
 				path.setAttribute("fill", resolveColor(stroke.color, this.doc.space, this.el));
 				path.setAttribute("fill-opacity", stroke.tool === "hl" ? String(HL_ALPHA * 0.7) : "0.55");
 			}
-			if (label.name) {
+			// Namensschild sitzt am Zeiger, falls es einen gibt
+			if (label.name && !withPointer.has(key)) {
 				const x = p[p.length - 3];
 				const y = p[p.length - 2];
 				const text = g.appendChild(document.createElementNS(SVG_NS, "text"));
@@ -200,8 +204,37 @@ export class Surface {
 			}
 			nodes.push(g);
 		}
-		this.remoteGroup.replaceChildren(...nodes);
 		this.el.dataset.remote = String(nodes.length);
+		// Fremde Stift-/Mauszeiger: Punkt in der Farbe der Person (Stift: Ring = schwebt, gefüllt = schreibt) + Name
+		for (const { key, pos, label } of this.remotePointers) {
+			const g = document.createElementNS(SVG_NS, "g");
+			g.dataset.key = key;
+			g.classList.add("ink-remote-pointer");
+			const r = (pos.kind === "pen" ? 4 : 5) / (this.scale || 1);
+			const c = g.appendChild(document.createElementNS(SVG_NS, "circle"));
+			c.setAttribute("cx", String(pos.x));
+			c.setAttribute("cy", String(pos.y));
+			c.setAttribute("r", String(r));
+			c.setAttribute("fill", pos.down || pos.kind !== "pen" ? label.color : "none");
+			c.setAttribute("fill-opacity", "0.85");
+			c.setAttribute("stroke", label.color);
+			c.setAttribute("stroke-width", String(1.5 / (this.scale || 1)));
+			if (label.name) {
+				const text = g.appendChild(document.createElementNS(SVG_NS, "text"));
+				text.textContent = label.name;
+				text.setAttribute("x", String(pos.x + r * 1.6));
+				text.setAttribute("y", String(pos.y - r * 1.6));
+				text.setAttribute("font-size", String(fs));
+				text.setAttribute("fill", "#fff");
+				text.setAttribute("paint-order", "stroke");
+				text.setAttribute("stroke", label.color);
+				text.setAttribute("stroke-width", String(fs * 0.5));
+				text.setAttribute("stroke-linejoin", "round");
+			}
+			nodes.push(g);
+		}
+		this.remoteGroup.replaceChildren(...nodes);
+		this.el.dataset.pointers = String(this.remotePointers.length);
 	}
 
 	/** Band-Ebene neu aufbauen (wenige Elemente – billiger als Buchführung über Änderungen). */
