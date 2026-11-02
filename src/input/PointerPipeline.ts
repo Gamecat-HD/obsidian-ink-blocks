@@ -113,6 +113,9 @@ export class PointerPipeline {
 		el.addEventListener("pointermove", this.onMove);
 		el.addEventListener("pointerup", this.onUp);
 		el.addEventListener("pointercancel", this.onCancel);
+		el.addEventListener("pointerleave", () => {
+			if (!this.gesture) this.plugin.api.emitPointer(this.entry.path, null);
+		});
 		// Capture verloren ohne pointerup (Fokuswechsel, Fenster verdeckt …): Geste abschließen statt sie
 		// hängen zu lassen – sonst würde der nächste Strich verworfen bzw. an den alten angehängt.
 		el.addEventListener("lostpointercapture", this.onUp);
@@ -131,6 +134,7 @@ export class PointerPipeline {
 	}
 
 	destroy() {
+		this.plugin.api.emitPointer(this.entry.path, null);
 		window.clearTimeout(this.holdTimer);
 		this.gesture = null;
 		this.setDrawing(false);
@@ -316,6 +320,11 @@ export class PointerPipeline {
 	}
 
 	private readonly onMove = (e: PointerEvent) => {
+		// Stift-/Mausposition für Zusammenarbeit (api.onPointer), auch beim Schweben ohne Kontakt
+		if (e.pointerType !== "touch" || this.gesture) {
+			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			this.plugin.api.emitPointer(this.entry.path, { x, y, kind: e.pointerType === "pen" ? "pen" : e.pointerType === "touch" ? "touch" : "mouse", down: this.gesture?.kind === "draw" });
+		}
 		if (e.pointerType === "touch" && this.touchMove(e)) return;
 		const g = this.gesture;
 		if (!g) {

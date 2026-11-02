@@ -82,6 +82,7 @@ text: |
 
 Ink Blocks bietet eine optionale Schnittstelle für Echtzeit-Zusammenarbeit (`app.plugins.plugins["obsidian-ink-blocks"].api`, siehe `src/api.ts`). Das Plugin [Tandem](https://github.com/Gamecat-HD/obsidian-tandem) nutzt sie:
 - Andere sehen deinen Strich **schon während des Schreibens** als halbtransparenten Strich mit deinem Namen. Der fertige Strich (gleiche ID) ersetzt ihn.
+- Man sieht, wo der Stift (oder die Maus) der anderen gerade über der Fläche ist: ein Ring mit Namen, solange er schwebt, und ein gefüllter Punkt beim Schreiben.
 - Nach jeder Änderung wird sofort gespeichert, statt nach 1,5 s.
 - Zeichnet jemand anderes auf derselben Fläche, bleibt dein Undo-Verlauf erhalten (nur wenn fremde Änderungen etwas entfernen, wird er geleert).
 

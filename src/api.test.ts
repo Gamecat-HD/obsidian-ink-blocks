@@ -55,3 +55,22 @@ describe("InkApi", () => {
 		api.destroy();
 	});
 });
+
+describe("InkApi – Zeiger", () => {
+	it("zeigt fremde Zeiger und räumt sie beim Abmelden auf", () => {
+		const { plugin } = fakePlugin();
+		const api = new InkApi(plugin as never);
+		const got: unknown[] = [];
+		api.onPointer((f, p) => got.push(p && `${f}:${p.kind}`));
+		api.emitPointer("a.ink", { x: 1, y: 2, kind: "pen" });
+		api.emitPointer("a.ink", null);
+		expect(got).toEqual(["a.ink:pen", null]);
+		api.setRemotePointer("a.ink", "bob", { x: 10, y: 20, kind: "pen" }, { name: "Bob", color: "#00f" });
+		expect(api.pointersFor("a.ink")).toHaveLength(1);
+		api.setRemotePointer("a.ink", "bob", { x: 11, y: 21, kind: "pen", down: true });
+		expect(api.pointersFor("a.ink")[0].label.name).toBe("Bob");
+		api.clearRemote("bob");
+		expect(api.pointersFor("a.ink")).toHaveLength(0);
+		api.destroy();
+	});
+});
