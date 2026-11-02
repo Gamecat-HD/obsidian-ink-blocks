@@ -162,6 +162,13 @@
 	border-left: 1px solid var(--background-modifier-border);
 }
 
+/* Rückgängig, Ausklappen, Löschen bleiben rechts sichtbar, auch wenn die Leiste quer scrollt (Tablet: 40-px-Knöpfe). */
+.ink-tb-edit {
+	position: sticky;
+	right: 0;
+	background: var(--background-secondary);
+}
+
 .ink-toolbar button {
 	width: 28px;
 	height: 28px;
@@ -181,6 +188,10 @@
 .ink-toolbar button.is-disabled {
 	opacity: 0.35;
 	pointer-events: none;
+}
+
+.ink-toolbar button.ink-tb-delete:hover {
+	color: var(--text-error);
 }
 
 .ink-tb-swatch::after {
@@ -315,7 +326,8 @@
 	font-size: var(--font-smaller);
 }
 
-.ink-orphan-actions {
+.ink-orphan-actions,
+.ink-confirm-actions {
 	display: flex;
 	gap: var(--size-4-2);
 	justify-content: flex-end;

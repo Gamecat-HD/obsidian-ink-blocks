@@ -26,6 +26,8 @@ export interface InkEditorHost {
 	expanded?: boolean;
 	/** Lasso → „Als Text einfügen“: Absatz unter den Block in der Notiz schreiben. */
 	insertText?(text: string): Promise<boolean>;
+	/** Block samt Handschrift löschen (nur der Block in der Notiz). */
+	deleteBlock?(): void;
 	/** Zwei Finger: zoomen/verschieben (nur die ausgeklappte Ansicht). */
 	pinch?(p: Pinch): void;
 	pinchEnd?(): void;
@@ -69,6 +71,7 @@ export class InkEditor {
 				if (reveal) for (const s of tapes) entry.revealed.add(s.id);
 				plugin.refreshTape(entry);
 			},
+			deleteBlock: host.deleteBlock ? () => host.deleteBlock?.() : undefined,
 		});
 		// Klick auf die Leiste aktiviert die Ansicht ebenfalls (Capture: die Leiste stoppt die Propagation).
 		this.toolbar.el.addEventListener("pointerdown", () => host.activate(), { capture: true });

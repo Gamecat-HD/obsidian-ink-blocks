@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBlock, setField, setFields } from "./source";
-import { findInkFences, locateInkFence, replaceFenceBody } from "./locate";
+import { findInkFences, locateInkFence, removeFence, replaceFenceBody } from "./locate";
 
 const BODY = [
 	"file: _ink/2026-10-13-notiz-a1b2.ink",
@@ -105,6 +105,24 @@ describe("findInkFences/locateInkFence", () => {
 		const lines = out.split("\n");
 		expect(lines.slice(11, 16)).toEqual(["~~~~ink", "file: _ink/b.ink", "text: |", "  neu", "~~~~"]);
 		expect(lines.length).toBe(NOTE.split("\n").length);
+	});
+	it("removeFence entfernt den Block samt einer angrenzenden Leerzeile", () => {
+		const remove = (text: string) => removeFence(text, locateInkFence(text, "_ink/x.ink")!.fence);
+		const block = "```ink\nfile: _ink/x.ink\n```";
+		expect(remove(`Text\n\n${block}\n\nWeiter`)).toBe("Text\n\nWeiter");
+		expect(remove(`${block}\n\nWeiter`)).toBe("Weiter");
+		expect(remove(`Text\n\n${block}`)).toBe("Text");
+		expect(remove(`Text\n\n${block}\n`)).toBe("Text\n");
+		expect(remove(block)).toBe("");
+		// Ohne Leerzeilen drumherum bleibt der Rest unverändert.
+		expect(remove(`Text\n${block}\n\nWeiter`)).toBe("Text\n\nWeiter");
+		expect(remove(`Text\n${block}\nWeiter`)).toBe("Text\nWeiter");
+		expect(remove(`Text\r\n\r\n${block.replace(/\n/g, "\r\n")}\r\n\r\nWeiter`)).toBe("Text\r\n\r\nWeiter");
+	});
+	it("removeFence trifft bei kopierten Blöcken nur den gewählten", () => {
+		const fence = locateInkFence(NOTE, "_ink/a.ink", 18)!.fence;
+		const out = removeFence(NOTE, fence);
+		expect(findInkFences(out).map((f) => f.file)).toEqual(["_ink/a.ink", "_ink/b.ink"]);
 	});
 	it("setFields setzt/entfernt mehrere Felder", () => {
 		expect(setFields("file: a.ink\nbgStyle: ruled\ngap: 30\n", { bgStyle: "grid", gap: undefined })).toBe("file: a.ink\nbgStyle: grid\n");

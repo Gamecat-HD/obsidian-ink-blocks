@@ -110,6 +110,19 @@ export class InkStore {
 		this.entries.clear();
 	}
 
+	/**
+	 * Eintrag verwerfen, bevor die Datei gelöscht wird: ausstehendes Speichern abbrechen, damit es die Datei
+	 * nicht neu anlegt. Blöcke, die ihn noch halten, geben ihn beim Entladen folgenlos frei.
+	 */
+	discard(path: string) {
+		const entry = this.entries.get(path);
+		if (!entry) return;
+		entry.save.cancel();
+		entry.dirty = false;
+		window.clearTimeout(entry.evictTimer);
+		this.entries.delete(path);
+	}
+
 	/** Legt eine neue .ink-Datei an (inkl. Ordner). */
 	async create(path: string, doc: InkData): Promise<TFile> {
 		const { vault } = this.plugin.app;
