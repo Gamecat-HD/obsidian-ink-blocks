@@ -1,4 +1,5 @@
-import { MarkdownView, normalizePath, type App, type Editor } from "obsidian";
+import type { EditorView } from "@codemirror/view";
+import { MarkdownView, normalizePath, type App, type Editor, type EditorPosition } from "obsidian";
 import { fenceRemovalLines, findInkFences, locateInkFence, removeFence, replaceFenceBody } from "./locate";
 import { parseBlock, setFields } from "./source";
 
@@ -60,8 +61,63 @@ function writeViaEditor(editor: Editor, inkPath: string, fields: Record<string, 
 	if (body === fence.body) return false;
 	const from = { line: fence.open + 1, ch: 0 };
 	const to = { line: fence.close, ch: 0 };
-	editor.replaceRange(body === "" ? "" : body.replace(/\n?$/, "\n"), from, to);
+	replaceQuietly(editor, body === "" ? "" : body.replace(/\n?$/, "\n"), from, to);
 	return true;
+}
+
+/** CodeMirror-Ansicht hinter Obsidians `Editor` (nicht dokumentiert, aber stabil; fehlt → `null`). */
+function cmView(editor: Editor): EditorView | null {
+	return (editor as unknown as { cm?: EditorView }).cm ?? null;
+}
+
+/**
+ * Notiztext ersetzen, ohne dass die Ansicht springt. Wer nur mit dem Stift arbeitet, lässt die Schreibmarke am
+ * Notizanfang stehen; schrieb die Texterkennung dann `text:` in einen Block, landete die Ansicht manchmal ganz
+ * oben. Deshalb: Änderung direkt an CodeMirror (ohne „Auswahl ins Bild holen“, Undo bleibt) und danach die
+ * Ansicht so nachführen, dass die Schreibfläche unter dem Stift (sonst die erste sichtbare) an ihrem Platz bleibt.
+ */
+function replaceQuietly(editor: Editor, text: string, from: EditorPosition, to: EditorPosition = from) {
+	const cm = cmView(editor);
+	if (!cm) return editor.replaceRange(text, from, to);
+	const restore = holdView(cm.scrollDOM);
+	cm.dispatch({ changes: { from: editor.posToOffset(from), to: editor.posToOffset(to), insert: text } });
+	restore();
+}
+
+/** Lage einer Schreibfläche merken; die Rückgabe schiebt die Ansicht nach dem Neuzeichnen wieder zurecht. */
+function holdView(scroller: HTMLElement): () => void {
+	const area = scroller.getBoundingClientRect();
+	const blocks = [...scroller.querySelectorAll<HTMLElement>(".ink-block")];
+	const visible = (b: HTMLElement) => {
+		const r = b.getBoundingClientRect();
+		return r.bottom > area.top && r.top < area.bottom;
+	};
+	const anchor = blocks.find((b) => b.hasClass("is-active") && visible(b)) ?? blocks.find(visible);
+	const path = anchor?.querySelector<HTMLElement>(".ink-surface")?.dataset.path;
+	if (!anchor || !path) return () => {};
+	const top0 = anchor.getBoundingClientRect().top;
+	// Scrollt der Nutzer inzwischen selbst, wird nichts korrigiert.
+	let userScrolled = false;
+	const onUser = () => (userScrolled = true);
+	const events = ["wheel", "touchmove", "keydown"] as const;
+	for (const type of events) scroller.addEventListener(type, onUser, { capture: true, passive: true });
+	const correct = () => {
+		if (userScrolled || !scroller.isConnected) return;
+		// Der Block kann neu gerendert worden sein: dieselbe Fläche über ihre Datei wiederfinden.
+		const same = [...scroller.querySelectorAll<HTMLElement>(`.ink-surface[data-path="${CSS.escape(path)}"]`)];
+		const tops = same.map((el) => (el.closest<HTMLElement>(".ink-block") ?? el).getBoundingClientRect().top);
+		if (!tops.length) return;
+		const top = tops.reduce((a, b) => (Math.abs(b - top0) < Math.abs(a - top0) ? b : a));
+		if (Math.abs(top - top0) > 2) scroller.scrollTop += top - top0;
+	};
+	return () => {
+		// CodeMirror misst und scrollt im nächsten Frame, der neue Block erscheint kurz danach.
+		requestAnimationFrame(() => requestAnimationFrame(correct));
+		window.setTimeout(() => {
+			correct();
+			for (const type of events) scroller.removeEventListener(type, onUser, { capture: true });
+		}, 300);
+	};
 }
 
 /** Aktuelle Fassung der Notiz: aus dem offenen Editor (auch ungespeichert) oder aus der Datei. */
@@ -131,7 +187,7 @@ export async function insertAfterBlock(app: App, notePath: string, inkPath: stri
 		const found = locateInkFence(editor.getValue(), inkPath, hintLine);
 		if (!found) return false;
 		const line = found.fence.close;
-		editor.replaceRange(`\n\n${text}`, { line, ch: editor.getLine(line).length });
+		replaceQuietly(editor, `\n\n${text}`, { line, ch: editor.getLine(line).length });
 		return true;
 	}
 	const file = app.vault.getFileByPath(notePath);
