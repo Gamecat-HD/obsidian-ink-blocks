@@ -110,6 +110,15 @@ export class InkApi {
 		return () => this.commits.delete(fn);
 	}
 
+	/**
+	 * `fn` exklusiv für diese .ink-Datei ausführen: Ink Blocks liest/speichert währenddessen nicht.
+	 * Wer die Datei von außen schreibt (z. B. Tandem per `vault.process`), sollte das hierin tun –
+	 * `vault.process` allein ist nicht atomar gegenüber gleichzeitigem Speichern.
+	 */
+	exclusive<T>(file: string, fn: () => Promise<T> | T): Promise<T> {
+		return this.plugin.store.exclusive(file, fn);
+	}
+
 	/** Ausstehende Änderungen dieser .ink-Datei sofort speichern. */
 	async flush(file: string): Promise<void> {
 		await this.plugin.store.flush(file);

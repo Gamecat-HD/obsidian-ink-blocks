@@ -34,6 +34,11 @@ interface Entry extends InkEntry {
 	lastWritten: string;
 	save: Debouncer<[], Promise<void>>;
 	evictTimer?: number;
+	/**
+	 * Lesen (fremde Änderung) und Schreiben laufen pro Datei nacheinander. Sonst könnte eine langsam gelesene,
+	 * inzwischen veraltete Fassung den eigenen, gerade gespeicherten Strich wieder überschreiben.
+	 */
+	queue: Promise<void>;
 }
 
 const SAVE_DELAY = 1500;
@@ -157,22 +162,68 @@ export class InkStore {
 			listeners: new Set(),
 			base: decodeInk(text),
 			lastWritten: text,
-			save: debounce(() => this.write(entry), SAVE_DELAY, true),
+			save: debounce(() => this.serial(entry, () => this.write(entry)), SAVE_DELAY, true),
+			queue: Promise.resolve(),
 		};
 		this.entries.set(path, entry);
 		return entry;
 	}
 
+	/**
+	 * `fn` exklusiv für diese Datei ausführen – nicht gleichzeitig mit eigenem Lesen/Speichern (api.exclusive).
+	 * Andere Plugins, die die .ink-Datei schreiben (Tandem), vermeiden so verlorene Änderungen.
+	 */
+	exclusive<T>(path: string, fn: () => Promise<T> | T): Promise<T> {
+		const entry = this.entries.get(path);
+		if (!entry) return Promise.resolve().then(fn);
+		const run = entry.queue.then(fn, fn);
+		entry.queue = run.then(
+			() => {},
+			() => {},
+		);
+		return run;
+	}
+
+	private serial(entry: Entry, fn: () => Promise<void>): Promise<void> {
+		const next = entry.queue.then(fn, fn).catch((e) => console.warn(`[ink-blocks] ${entry.path}`, e));
+		entry.queue = next;
+		return next;
+	}
+
+	/**
+	 * Speichern als atomares Lesen-Ändern-Schreiben (`vault.process`): Hat jemand anderes die Datei seit dem
+	 * letzten Lesen geändert (Sync, Zusammenarbeit), wird diese Fassung per mergeInk eingearbeitet statt blind
+	 * überschrieben. `dirty` wird erst hier zurückgesetzt – bis dahin führt onModify zusammen, statt zu ersetzen.
+	 */
 	private async write(entry: Entry) {
 		if (!entry.dirty) return;
 		const file = this.plugin.app.vault.getFileByPath(entry.path);
 		if (!file) return;
-		const text = encodeInk(entry.doc);
-		entry.dirty = false;
-		if (text === entry.lastWritten) return;
-		entry.lastWritten = text;
-		entry.base = decodeInk(text);
-		await this.plugin.app.vault.modify(file, text);
+		let merged = false;
+		let historyInvalid = false;
+		await this.plugin.app.vault.process(file, (data) => {
+			if (data !== entry.lastWritten) {
+				try {
+					const remote = decodeInk(data);
+					const after = new Set(remote.strokes.map((s) => s.id));
+					historyInvalid = entry.base.strokes.some((s) => !after.has(s.id));
+					entry.doc = mergeInk(entry.base, entry.doc, remote);
+					merged = true;
+				} catch (e) {
+					console.warn(`[ink-blocks] ${entry.path}: Datei nicht lesbar, wird überschrieben`, e);
+				}
+			}
+			entry.dirty = false;
+			const text = encodeInk(entry.doc);
+			entry.lastWritten = text;
+			entry.base = decodeInk(text);
+			return text;
+		});
+		if (merged) {
+			if (historyInvalid) entry.history.clear();
+			this.emit(entry, "reloaded");
+			this.plugin.api?.docChanged(entry.path);
+		}
 	}
 
 	private emit(entry: Entry, event: InkEvent) {
@@ -182,6 +233,11 @@ export class InkStore {
 	private async onModify(file: TAbstractFile) {
 		const entry = this.entries.get(file.path);
 		if (!entry || !(file instanceof TFile)) return;
+		await this.serial(entry, () => this.applyExternal(entry, file));
+	}
+
+	private async applyExternal(entry: Entry, file: TFile) {
+		if (this.entries.get(entry.path) !== entry) return;
 		const text = await this.plugin.app.vault.read(file);
 		if (text === entry.lastWritten) return; // eigener Schreibvorgang
 		let remote: InkData;
@@ -196,13 +252,16 @@ export class InkStore {
 		const before = new Set(entry.base.strokes.map((s) => s.id));
 		const after = new Set(remote.strokes.map((s) => s.id));
 		const onlyAdded = [...before].every((id) => after.has(id));
-		entry.doc = entry.dirty ? mergeInk(entry.base, entry.doc, remote) : remote;
+		// Lokale, noch nicht gespeicherte Änderungen: gespeichert (dirty) ODER gerade in Arbeit (z. B. Radierer-Geste,
+		// die Striche schon während der Bewegung entfernt) → zusammenführen statt ersetzen.
+		const local = entry.dirty || [...this.plugin.editors].some((e) => e.entry === entry && e.busy);
+		entry.doc = local ? mergeInk(entry.base, entry.doc, remote) : remote;
 		entry.base = remote;
 		if (!onlyAdded) entry.history.clear();
 		entry.lastWritten = text;
 		this.emit(entry, "reloaded");
 		this.plugin.api?.docChanged(entry.path);
-		if (entry.dirty) entry.save();
+		if (entry.dirty) void entry.save();
 	}
 
 	private onDelete(file: TAbstractFile) {
