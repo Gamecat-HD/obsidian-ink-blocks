@@ -615,7 +615,14 @@ export class PointerPipeline {
 		}
 		const doc = this.entry.doc;
 		const added = doc.strokes.filter((s) => g.pieces.has(s.id));
-		doc.strokes = g.snapshot;
+		// Stand vor der Geste wiederherstellen – aber auf dem AKTUELLEN Dokument, nicht aus dem Schnappschuss:
+		// Während der Geste können Striche anderer hinzugekommen sein (Zusammenarbeit), die müssen bleiben.
+		const before = doc.strokes.filter((s) => !g.pieces.has(s.id));
+		const present = new Set(before.map((s) => s.id));
+		for (const r of [...g.removed].sort((a, b) => a.index - b.index)) {
+			if (!present.has(r.stroke.id)) before.splice(Math.min(r.index, before.length), 0, r.stroke);
+		}
+		doc.strokes = before;
 		const op = replaceOp(doc, new Set(g.removed.map((r) => r.stroke.id)), added);
 		applyOp(doc, op);
 		this.surface.redraw(opBounds(op));
