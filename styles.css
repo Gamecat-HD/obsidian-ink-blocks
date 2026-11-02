@@ -183,6 +183,10 @@
 	pointer-events: none;
 }
 
+.ink-toolbar button.ink-tb-delete:hover {
+	color: var(--text-error);
+}
+
 .ink-tb-swatch::after {
 	content: "";
 	width: 16px;
@@ -315,7 +319,8 @@
 	font-size: var(--font-smaller);
 }
 
-.ink-orphan-actions {
+.ink-orphan-actions,
+.ink-confirm-actions {
 	display: flex;
 	gap: var(--size-4-2);
 	justify-content: flex-end;

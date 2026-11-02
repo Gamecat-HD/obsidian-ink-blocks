@@ -1,14 +1,15 @@
-import { MarkdownRenderChild, normalizePath, type MarkdownPostProcessorContext, type TAbstractFile, type TFile } from "obsidian";
+import { MarkdownRenderChild, normalizePath, Notice, type MarkdownPostProcessorContext, type TAbstractFile, type TFile } from "obsidian";
 import type InkBlocksPlugin from "../main";
 import { InkFormatError } from "../model/ink-format";
 import type { OcrTarget } from "../ocr/OcrService";
 import { backgroundKind, measureBackground } from "../render/background";
 import { patternFields, resolvePattern, type Pattern, type PatternChange } from "../model/pattern";
 import type { InkEntry, InkEvent } from "../store/InkStore";
+import { ConfirmDeleteModal } from "../ui/ConfirmDeleteModal";
 import { ExpandModal } from "../ui/ExpandModal";
 import { parseBgLink } from "./bgLink";
 import { InkEditor, type ResolvedBackground } from "./InkEditor";
-import { insertAfterBlock, writeBlockFields } from "./BlockWriter";
+import { countBlocksUsing, insertAfterBlock, removeBlock, writeBlockFields } from "./BlockWriter";
 import { parseBlock, type BlockFields } from "./source";
 
 /**
@@ -219,6 +220,42 @@ export class InkBlockChild extends MarkdownRenderChild {
 		return insertAfterBlock(this.plugin.app, this.ctx.sourcePath, path, text, this.ctx.getSectionInfo(this.containerEl)?.lineStart);
 	}
 
+	/** Leere Fläche sofort löschen, sonst erst nach Rückfrage. */
+	private confirmDelete() {
+		const entry = this.entry;
+		if (!entry) return;
+		if (!entry.doc.strokes.length) return void this.deleteBlock();
+		const what = entry.doc.space === "page" ? "Arbeitsblatt-Seite" : "Schreibfläche";
+		new ConfirmDeleteModal(this.plugin.app, what, () => void this.deleteBlock()).open();
+	}
+
+	/**
+	 * Block aus der Notiz entfernen und die .ink-Datei in den Papierkorb legen – außer ein anderer
+	 * (kopierter) Block zeigt noch auf dieselbe Datei.
+	 */
+	private async deleteBlock() {
+		const path = this.path;
+		if (!path) return;
+		const { app } = this.plugin;
+		const notePath = this.ctx.sourcePath;
+		const hint = this.ctx.getSectionInfo(this.containerEl)?.lineStart;
+		// Vor dem Entfernen zählen: dieser Block ist einer davon.
+		const shared = (await countBlocksUsing(app, path)) > 1;
+		this.releaseFocus();
+		if (!(await removeBlock(app, notePath, path, hint))) {
+			new Notice("Block nicht gefunden – nichts gelöscht.");
+			return;
+		}
+		if (shared) {
+			new Notice("Block entfernt. Die Handschrift bleibt, weil ein anderer Block sie noch verwendet.");
+			return;
+		}
+		this.plugin.store.discard(path);
+		const file = app.vault.getFileByPath(path);
+		if (file) await app.fileManager.trashFile(file);
+		new Notice("Gelöscht – die Handschrift liegt im Papierkorb.");
+	}
+
 	/**
 	 * Fokus/Auswahl aus dem Widget nehmen, bevor der Blockinhalt geschrieben wird – sonst übernimmt
 	 * CodeMirror beim Re-Render die DOM-Auswahl und Live Preview klappt den Block in den Quelltext auf.
@@ -283,6 +320,7 @@ export class InkBlockChild extends MarkdownRenderChild {
 			activate: this.activate,
 			toggleExpand: () => this.expand(),
 			insertText: (text) => this.insertText(text),
+			deleteBlock: () => this.confirmDelete(),
 		});
 		this.renderCaption();
 		if (entry.reactivate) {

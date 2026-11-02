@@ -62,6 +62,28 @@ export function locateInkFence(
 	return { fence: matches[0], duplicates: matches.length - 1 };
 }
 
+/**
+ * Zeilen (0-basiert, inklusive), die beim Löschen des Blocks wegfallen: der Block selbst und – wenn er
+ * zwischen Leerzeilen bzw. am Notizanfang/-ende steht – eine angrenzende Leerzeile, damit keine doppelte bleibt.
+ */
+export function fenceRemovalLines(lines: string[], fence: InkFence): { from: number; to: number } {
+	const blank = (n: number) => lines[n].trim() === "";
+	const hasBefore = fence.open > 0;
+	const hasAfter = fence.close < lines.length - 1;
+	if (hasAfter && blank(fence.close + 1) && (!hasBefore || blank(fence.open - 1))) return { from: fence.open, to: fence.close + 1 };
+	if (!hasAfter && hasBefore && blank(fence.open - 1)) return { from: fence.open - 1, to: fence.close };
+	return { from: fence.open, to: fence.close };
+}
+
+/** Entfernt den Block (siehe `fenceRemovalLines`) aus der Notiz. */
+export function removeFence(noteText: string, fence: InkFence): string {
+	const eol = noteText.includes("\r\n") ? "\r\n" : "\n";
+	const lines = noteText.split(/\r?\n/);
+	const { from, to } = fenceRemovalLines(lines, fence);
+	lines.splice(from, to - from + 1);
+	return lines.join(eol);
+}
+
 /** Ersetzt den Inhalt zwischen den Fence-Zeilen. */
 export function replaceFenceBody(noteText: string, fence: InkFence, body: string): string {
 	const eol = noteText.includes("\r\n") ? "\r\n" : "\n";

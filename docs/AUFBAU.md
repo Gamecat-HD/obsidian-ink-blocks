@@ -307,3 +307,9 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
   - Gewählt wird auf den Abstimmproben, übernommen nur bei weniger Fehlern UND nicht schlechterem Holdout. Die Werte stehen in `settings.ocrTuned` (gelten für den Schreiber, deshalb synchronisiert).
   - `scripts/bench/real.mjs --training <Vault>/_ink/_training` misst zusätzlich auf den gesammelten Proben.
 - **Bewusst noch nicht umgesetzt: Kopf-Training** (eigener CTC-Ausgabelayer in TS, siehe Recherche Nr. 6). Es braucht erst echte Proben (30–50+ Zeilen) und einen einmalig um einen Feature-Ausgang erweiterten ONNX-Graphen. Proben, Holdout und die Worker-Schnittstelle dafür sind jetzt vorhanden; wenn das Abstimmen mit genug Proben nichts mehr bringt, ist das der nächste Schritt.
+
+### Nach v0.5.0 (M25): Schreibfläche löschen
+
+- Mülleimer in der Leiste des Blocks (nicht in der ausgeklappten Ansicht). Leere Fläche → sofort, sonst `ui/ConfirmDeleteModal.ts`.
+- Ablauf (`InkBlockChild.deleteBlock`): erst `countBlocksUsing` über alle Notizen (offene in ihrer Editor-Fassung), dann `removeBlock` (offene Notiz über den Editor, also Undo-fähig; sonst `vault.process`). Mitentfernt wird eine angrenzende Leerzeile, wenn der Block zwischen Leerzeilen bzw. am Rand steht (`locate.fenceRemovalLines`).
+- Nur wenn kein anderer Block die Datei nutzt: `InkStore.discard` (bricht ein ausstehendes Speichern ab, das die Datei sonst neu anlegen würde) und `fileManager.trashFile` (beachtet die Papierkorb-Einstellung von Obsidian).

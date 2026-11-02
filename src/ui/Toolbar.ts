@@ -22,6 +22,8 @@ export interface ToolbarActions {
 	/** Abdeckbänder im Dokument: keine, mindestens eins zugedeckt, alle aufgedeckt. */
 	tapeState(): "none" | "covered" | "revealed";
 	toggleAllTape(): void;
+	/** Block samt Handschrift löschen (fehlt → kein Button, z. B. in der ausgeklappten Ansicht). */
+	deleteBlock?: () => void;
 }
 
 const TOOLS: { id: ToolId; icon: string; label: string }[] = [
@@ -124,6 +126,11 @@ export class Toolbar {
 			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
 			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
 			btn.addClass("ink-tb-expand");
+		}
+		if (actions.deleteBlock) {
+			const label = actions.pattern() === null ? "Arbeitsblatt-Seite löschen" : "Schreibfläche löschen";
+			const btn = this.button(edit, "trash-2", label, () => actions.deleteBlock?.());
+			btn.addClass("ink-tb-delete");
 		}
 
 		this.update();
