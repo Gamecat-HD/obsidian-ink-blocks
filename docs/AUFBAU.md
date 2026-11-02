@@ -319,3 +319,8 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
 - Beobachtet in echten Proben (Diktat): Fläche 260 hoch, ab y = 140 wächst sie um `GROW_STEP`; der zentrierte Dialog wird höher und rutscht nach oben. Der Stift steht still, `toDoc` liefert plötzlich ~110–120 Einheiten weiter unten – der Strich zog eine lange senkrechte Linie (alle vier Sprünge in den Proben starten bei y = 140–149).
 - `PointerPipeline`: Zeichnen und Radieren merken sich die Bildschirmlage der Fläche (`Surface.screenOrigin`). Verschiebt sie sich zwischen zwei Punkten um mehr als 1 CSS-px (Wachsen + Neuzentrieren, Scrollen der Notiz, Layoutwechsel), endet der Strich dort und ein neuer beginnt an der neuen Stelle; der Radierer überspringt den Sprung.
 - Schreibtraining-Dialoge sind oben verankert (`align-self: flex-start`), wachsen also nach unten statt sich neu zu zentrieren.
+
+### Nach M26 (M27): Notiz springt nicht mehr nach oben
+
+- Beobachtet auf dem Tablet: Beim Schreiben sprang die Notiz manchmal ganz nach oben, zeitgleich mit dem Eintragen des erkannten Textes (`text:`) in einen Block. Wer nur mit dem Stift arbeitet, lässt die Schreibmarke von CodeMirror am Notizanfang stehen; eine Änderung über `editor.replaceRange` holte sie offenbar ins Bild.
+- `BlockWriter.replaceQuietly`: Änderungen an offenen Notizen (Felder, Text unter dem Block) gehen direkt an CodeMirror (`editor.cm.dispatch`, ohne `scrollIntoView`, Undo bleibt). `holdView` merkt sich davor die Lage der aktiven bzw. ersten sichtbaren Schreibfläche und schiebt die Ansicht nach dem Neuzeichnen (2 Frames, nochmals nach 300 ms) zurück, falls sie verrutscht ist – außer der Nutzer scrollt inzwischen selbst.
