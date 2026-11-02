@@ -55,6 +55,8 @@ type Gesture =
 			holdY: number;
 			points: number[];
 			hStart: number;
+			/** ID des entstehenden Strichs (wird zur ID des fertigen Strichs, api.onLiveStroke). */
+			liveId: string;
 	  })
 	| (ScreenOrigin & {
 			kind: "erase";
@@ -256,6 +258,7 @@ export class PointerPipeline {
 			holdY: y,
 			points: [x, y, simulated ? 0.5 : pressure],
 			hStart: this.entry.doc.h,
+			liveId: shortId(6),
 		};
 		this.armHold(x, y);
 		this.renderLive();
@@ -263,7 +266,7 @@ export class PointerPipeline {
 
 	/** Fertigen Strich ins Dokument übernehmen (eine Op, Undo-fähig). */
 	private finishDraw(g: Extract<Gesture, { kind: "draw" }>) {
-		const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
+		const stroke: Stroke = { id: g.liveId, tool: g.tool, color: g.color, size: g.size, points: g.points };
 		if (g.shape) stroke.shape = true;
 		// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
 		if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
@@ -271,6 +274,7 @@ export class PointerPipeline {
 		applyOp(this.entry.doc, op);
 		this.surface.redraw([strokeBounds(stroke)]);
 		this.onOp(op);
+		this.plugin.api.emitLive(this.entry.path, null);
 	}
 
 	/** Bisherigen Strich abschließen und an (x, y) mit demselben Pointer einen neuen beginnen. */
@@ -444,6 +448,7 @@ export class PointerPipeline {
 		this.setDrawing(false);
 		if (g.kind === "draw") {
 			this.surface.clearLive();
+			this.plugin.api.emitLive(this.entry.path, null);
 			if (this.entry.doc.h !== g.hStart) {
 				this.entry.doc.h = g.hStart;
 				this.surface.resize();
@@ -562,6 +567,7 @@ export class PointerPipeline {
 			highlighter: g.tool === "hl",
 			tape: tape ? tapeSvg(g.points, g.size) : undefined,
 		});
+		this.plugin.api.emitLive(this.entry.path, { id: g.liveId, tool: g.tool, color: g.color, size: g.size, points: g.points, simulated: g.simulated });
 	}
 
 	private eraseSegment(x1: number, y1: number, x2: number, y2: number) {

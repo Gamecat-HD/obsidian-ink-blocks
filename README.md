@@ -78,6 +78,15 @@ text: |
 
 **Installation (manuell):** Nach `npm run build` die Dateien `main.js`, `manifest.json` und `styles.css` nach `<vault>/.obsidian/plugins/obsidian-ink-blocks/` kopieren und das Plugin unter Einstellungen → Community-Plugins aktivieren. Danach unter Einstellungen → Ink Blocks das Erkennungsmodell herunterladen.
 
+## Zusammenarbeit (Tandem)
+
+Ink Blocks bietet eine optionale Schnittstelle für Echtzeit-Zusammenarbeit (`app.plugins.plugins["obsidian-ink-blocks"].api`, siehe `src/api.ts`). Das Plugin [Tandem](https://github.com/Gamecat-HD/obsidian-tandem) nutzt sie:
+- Andere sehen deinen Strich **schon während des Schreibens** als halbtransparenten Strich mit deinem Namen. Der fertige Strich (gleiche ID) ersetzt ihn.
+- Nach jeder Änderung wird sofort gespeichert, statt nach 1,5 s.
+- Zeichnet jemand anderes auf derselben Fläche, bleibt dein Undo-Verlauf erhalten (nur wenn fremde Änderungen etwas entfernen, wird er geleert).
+
+Ohne Tandem ändert sich nichts.
+
 ## Dokumentation
 
 - [docs/ANALYSE.md](docs/ANALYSE.md): technische Bewertung, Architektur, Roadmap

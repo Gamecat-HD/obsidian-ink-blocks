@@ -862,3 +862,10 @@
 	min-height: 44px;
 	padding: 0 var(--size-4-3);
 }
+
+/* ---- Zusammenarbeit: fremde, gerade entstehende Striche (api.setRemoteStroke) ---- */
+
+.ink-remote-layer text {
+	font-family: var(--font-interface);
+	font-weight: 600;
+}

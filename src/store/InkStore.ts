@@ -101,6 +101,17 @@ export class InkStore {
 		await Promise.all([...this.entries.values()].map((e) => e.save.run()));
 	}
 
+	/** Ausstehende Änderungen einer Datei sofort speichern (api.flush). */
+	async flush(path: string) {
+		const e = this.entries.get(path);
+		if (e) await e.save.run();
+	}
+
+	/** Aktueller Stand einer geladenen Datei, ohne sie zu laden. */
+	peek(path: string): InkData | undefined {
+		return this.entries.get(path)?.doc;
+	}
+
 	/** Beim Entladen: ausstehende Saves sofort, Timer weg. */
 	dispose() {
 		for (const e of this.entries.values()) {
@@ -180,12 +191,17 @@ export class InkStore {
 			console.warn(`[ink-blocks] ${file.path}: externe Änderung nicht lesbar, wird ignoriert`, e);
 			return;
 		}
+		// Hat die fremde Änderung nur Striche hinzugefügt (jemand anderes zeichnet mit), bleiben die eigenen
+		// Ops gültig – sie beziehen sich auf Strich-IDs. Wurde etwas entfernt, ist Undo nicht mehr sicher.
+		const before = new Set(entry.base.strokes.map((s) => s.id));
+		const after = new Set(remote.strokes.map((s) => s.id));
+		const onlyAdded = [...before].every((id) => after.has(id));
 		entry.doc = entry.dirty ? mergeInk(entry.base, entry.doc, remote) : remote;
 		entry.base = remote;
-		// Ops beziehen sich auf den alten Stand – nach fremden Änderungen nicht mehr sicher umkehrbar.
-		entry.history.clear();
+		if (!onlyAdded) entry.history.clear();
 		entry.lastWritten = text;
 		this.emit(entry, "reloaded");
+		this.plugin.api?.docChanged(entry.path);
 		if (entry.dirty) entry.save();
 	}
 
