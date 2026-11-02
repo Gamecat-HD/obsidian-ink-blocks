@@ -730,6 +730,9 @@
 .modal.ink-training-modal {
 	width: min(900px, 96vw);
 	max-width: 96vw;
+	/* Oben verankert statt zentriert: wächst die Schreibfläche, würde der Dialog sonst unter dem Stift nach oben rutschen. */
+	align-self: flex-start;
+	margin-top: 6vh;
 }
 
 .ink-training-modal .modal-content {
