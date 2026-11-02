@@ -124,6 +124,12 @@ export class Surface {
 		this.applyPattern();
 	}
 
+	/** Lage der Innenkante auf dem Bildschirm (Clientkoordinaten) – ändert sie sich, ist die Fläche verrutscht. */
+	screenOrigin(): { x: number; y: number } {
+		const r = this.el.getBoundingClientRect();
+		return { x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop };
+	}
+
 	/** Clientkoordinaten → Doc-Einheiten (relativ zur Innenkante, ohne Rahmen). */
 	toDoc(clientX: number, clientY: number): { x: number; y: number } {
 		const r = this.el.getBoundingClientRect();

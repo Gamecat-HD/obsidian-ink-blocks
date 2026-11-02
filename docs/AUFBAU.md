@@ -313,3 +313,9 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
 - Mülleimer in der Leiste des Blocks (nicht in der ausgeklappten Ansicht). Leere Fläche → sofort, sonst `ui/ConfirmDeleteModal.ts`.
 - Ablauf (`InkBlockChild.deleteBlock`): erst `countBlocksUsing` über alle Notizen (offene in ihrer Editor-Fassung), dann `removeBlock` (offene Notiz über den Editor, also Undo-fähig; sonst `vault.process`). Mitentfernt wird eine angrenzende Leerzeile, wenn der Block zwischen Leerzeilen bzw. am Rand steht (`locate.fenceRemovalLines`).
 - Nur wenn kein anderer Block die Datei nutzt: `InkStore.discard` (bricht ein ausstehendes Speichern ab, das die Datei sonst neu anlegen würde) und `fileManager.trashFile` (beachtet die Papierkorb-Einstellung von Obsidian).
+
+### Nach v0.5.1 (M26): Kein Strich-Sprung, wenn die Fläche verrutscht
+
+- Beobachtet in echten Proben (Diktat): Fläche 260 hoch, ab y = 140 wächst sie um `GROW_STEP`; der zentrierte Dialog wird höher und rutscht nach oben. Der Stift steht still, `toDoc` liefert plötzlich ~110–120 Einheiten weiter unten – der Strich zog eine lange senkrechte Linie (alle vier Sprünge in den Proben starten bei y = 140–149).
+- `PointerPipeline`: Zeichnen und Radieren merken sich die Bildschirmlage der Fläche (`Surface.screenOrigin`). Verschiebt sie sich zwischen zwei Punkten um mehr als 1 CSS-px (Wachsen + Neuzentrieren, Scrollen der Notiz, Layoutwechsel), endet der Strich dort und ein neuer beginnt an der neuen Stelle; der Radierer überspringt den Sprung.
+- Schreibtraining-Dialoge sind oben verankert (`align-self: flex-start`), wachsen also nach unten statt sich neu zu zentrieren.

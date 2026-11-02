@@ -27,9 +27,17 @@ const TAP_PX = 6;
 const HOLD_MS = 500;
 /** Kleinere Bewegungen (CSS-px) zählen beim Halten nicht – Zittern der Hand. */
 const HOLD_SLOP_PX = 4;
+/** Verschiebt sich die Fläche auf dem Bildschirm um mehr als so viele CSS-px, ist sie unter dem Stift verrutscht. */
+const SHIFT_PX = 1;
+
+/** Lage der Fläche auf dem Bildschirm beim letzten verarbeiteten Punkt (siehe `surfaceShifted`). */
+interface ScreenOrigin {
+	ox: number;
+	oy: number;
+}
 
 type Gesture =
-	| {
+	| (ScreenOrigin & {
 			kind: "draw";
 			pointerId: number;
 			tool: Tool;
@@ -47,8 +55,8 @@ type Gesture =
 			holdY: number;
 			points: number[];
 			hStart: number;
-	  }
-	| {
+	  })
+	| (ScreenOrigin & {
 			kind: "erase";
 			pointerId: number;
 			x: number;
@@ -63,7 +71,7 @@ type Gesture =
 			/** Präzise: Strichliste vor der Geste und die dabei entstandenen Stücke. */
 			snapshot: Stroke[];
 			pieces: Map<string, Stroke>;
-	  }
+	  })
 	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null; x0: number; y0: number; t0: number }
 	| { kind: "tap"; pointerId: number; pointerType: string; tapeId: string; x: number; y: number; clientX: number; clientY: number; pressure: number }
 	| { kind: "lasso"; pointerId: number; poly: number[]; clientX: number; clientY: number; tap: boolean }
@@ -200,6 +208,7 @@ export class PointerPipeline {
 			this.gesture = {
 				kind: "erase",
 				pointerId: e.pointerId,
+				...this.origin(),
 				x,
 				y,
 				removed: [],
@@ -233,6 +242,7 @@ export class PointerPipeline {
 		this.gesture = {
 			kind: "draw",
 			pointerId,
+			...this.origin(),
 			tool: hl ? "hl" : tape ? "tape" : "pen",
 			color: hl ? tools.hlColor : tape ? tools.tapeColor : tools.penColor,
 			size: hl ? settings.hlSizes[tools.hlWidth] : tape ? TAPE_SIZES[tools.tapeWidth] : settings.penSizes[tools.penWidth],
@@ -249,6 +259,39 @@ export class PointerPipeline {
 		};
 		this.armHold(x, y);
 		this.renderLive();
+	}
+
+	/** Fertigen Strich ins Dokument übernehmen (eine Op, Undo-fähig). */
+	private finishDraw(g: Extract<Gesture, { kind: "draw" }>) {
+		const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
+		if (g.shape) stroke.shape = true;
+		// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
+		if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
+		const op: InkOp = { kind: "add", stroke, hBefore: g.hStart, hAfter: this.entry.doc.h };
+		applyOp(this.entry.doc, op);
+		this.surface.redraw([strokeBounds(stroke)]);
+		this.onOp(op);
+	}
+
+	/** Bisherigen Strich abschließen und an (x, y) mit demselben Pointer einen neuen beginnen. */
+	private restartDraw(g: Extract<Gesture, { kind: "draw" }>, pointerType: string, x: number, y: number, pressure: number) {
+		this.finishDraw(g);
+		this.beginDraw(g.pointerId, pointerType, x, y, pressure);
+		return this.gesture as Extract<Gesture, { kind: "draw" }>;
+	}
+
+	private origin(): ScreenOrigin {
+		const o = this.surface.screenOrigin();
+		return { ox: o.x, oy: o.y };
+	}
+
+	/** Hat sich die Fläche seit dem letzten Punkt auf dem Bildschirm verschoben? Merkt sich die neue Lage. */
+	private surfaceShifted(g: ScreenOrigin): boolean {
+		const o = this.surface.screenOrigin();
+		const shifted = Math.abs(o.x - g.ox) > SHIFT_PX || Math.abs(o.y - g.oy) > SHIFT_PX;
+		g.ox = o.x;
+		g.oy = o.y;
+		return shifted;
 	}
 
 	/** Oberstes Abdeckband unter (x, y), aufgedeckt oder nicht. */
@@ -314,6 +357,7 @@ export class PointerPipeline {
 		if (g.kind === "draw" && g.shape) return;
 		if (g.kind === "draw" && g.straight) {
 			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			if (this.surfaceShifted(g)) return this.restartDraw(g, e.pointerType, x, y, e.pressure);
 			g.points = straightLine(g.x0, g.y0, x, y);
 			this.maybeGrow(y);
 			this.renderLive();
@@ -321,23 +365,29 @@ export class PointerPipeline {
 		}
 
 		const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
+		let g2: Extract<Gesture, { kind: "draw" | "erase" }> = g;
 		for (const ev of events.length ? events : [e]) {
 			const { x, y } = this.surface.toDoc(ev.clientX, ev.clientY);
-			if (g.kind === "erase") {
-				this.eraseSegment(g.x, g.y, x, y);
-				g.x = x;
-				g.y = y;
+			// Fläche unter dem Stift verrutscht (sie ist gewachsen und der Dialog hat sich neu zentriert, die Notiz
+			// hat gescrollt …): den Sprung nicht als lange Linie verbinden.
+			const shifted = this.surfaceShifted(g2);
+			if (g2.kind === "erase") {
+				if (!shifted) this.eraseSegment(g2.x, g2.y, x, y);
+				g2.x = x;
+				g2.y = y;
+			} else if (shifted) {
+				g2 = this.restartDraw(g2, e.pointerType, x, y, ev.pressure);
 			} else {
-				const n = g.points.length;
-				if (Math.hypot(x - g.points[n - 3], y - g.points[n - 2]) < MIN_STEP) continue;
-				g.points.push(x, y, g.simulated ? 0.5 : ev.pressure);
+				const n = g2.points.length;
+				if (Math.hypot(x - g2.points[n - 3], y - g2.points[n - 2]) < MIN_STEP) continue;
+				g2.points.push(x, y, g2.simulated ? 0.5 : ev.pressure);
 				this.maybeGrow(y);
 			}
 		}
-		if (g.kind !== "draw") return;
-		const n = g.points.length;
-		const moved = Math.hypot(g.points[n - 3] - g.holdX, g.points[n - 2] - g.holdY) * this.surface.docScale;
-		if (moved > HOLD_SLOP_PX) this.armHold(g.points[n - 3], g.points[n - 2]);
+		if (g2.kind !== "draw") return;
+		const n = g2.points.length;
+		const moved = Math.hypot(g2.points[n - 3] - g2.holdX, g2.points[n - 2] - g2.holdY) * this.surface.docScale;
+		if (moved > HOLD_SLOP_PX) this.armHold(g2.points[n - 3], g2.points[n - 2]);
 		// Synchron malen (wie der Pen-Diagnose-Dialog): Chromium liefert pointermove ohnehin im Frame-Takt.
 		this.renderLive();
 	};
@@ -364,14 +414,7 @@ export class PointerPipeline {
 				if (id) this.toggleTape(id);
 			}
 		} else if (g.kind === "draw") {
-			const stroke: Stroke = { id: shortId(6), tool: g.tool, color: g.color, size: g.size, points: g.points };
-			if (g.shape) stroke.shape = true;
-			// Stifte ohne Druckunterstützung melden durchgehend 0.5 → wie Maus behandeln.
-			if (g.simulated || g.points.every((v, i) => i % 3 !== 2 || v === 0.5)) stroke.simulated = true;
-			const op: InkOp = { kind: "add", stroke, hBefore: g.hStart, hAfter: this.entry.doc.h };
-			applyOp(this.entry.doc, op);
-			this.surface.redraw([strokeBounds(stroke)]);
-			this.onOp(op);
+			this.finishDraw(g);
 		} else if (g.kind === "erase") {
 			this.finishErase(g);
 			if (e.pointerType !== "pen" || e.type === "lostpointercapture") this.hideEraser();
