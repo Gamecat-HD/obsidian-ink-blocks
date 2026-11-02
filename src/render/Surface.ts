@@ -1,7 +1,8 @@
 import type { InkColor, InkData } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
 import type { Pattern } from "../model/pattern";
-import { HL_ALPHA, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
+import type { LiveStroke as ApiLiveStroke, RemoteLabel } from "../api";
+import { HL_ALPHA, outlineSvg, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
 import { scaleFor, tileLayout, tilesForBounds, type Tile } from "./transform";
 
 interface TileState {
@@ -56,6 +57,9 @@ export class Surface {
 	private readonly tapeSvg: SVGSVGElement;
 	private readonly tapeGroup: SVGGElement;
 	private readonly tapeLive: SVGGElement;
+	/** Fremde, gerade entstehende Striche (Zusammenarbeit, siehe api.ts). */
+	private readonly remoteGroup: SVGGElement;
+	private remoteGhosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[] = [];
 	private readonly stripesId = `ink-tape-stripes-${++tapeIds}`;
 	private scale = 1;
 	private cssWidth = 0;
@@ -81,6 +85,8 @@ export class Surface {
 			`<rect width="5" height="14" fill="#fff" fill-opacity="0.22"/></pattern></defs>`;
 		this.tapeGroup = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
 		this.tapeLive = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
+		this.remoteGroup = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
+		this.remoteGroup.classList.add("ink-remote-layer");
 
 		this.io = new IntersectionObserver((entries) => this.onIntersect(entries), { rootMargin: "600px 0px" });
 		this.ro = new ResizeObserver(() => {
@@ -151,6 +157,51 @@ export class Surface {
 		this.el.dataset.strokes = String(this.doc.strokes.length);
 		this.tapeSvg.setAttribute("viewBox", `0 0 ${this.doc.w} ${this.doc.h}`);
 		this.renderTape();
+		this.renderRemote();
+	}
+
+	/** Fremde, gerade entstehende Striche halbtransparent mit Namensschild zeigen. */
+	drawRemote(ghosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[]) {
+		this.remoteGhosts = ghosts;
+		this.renderRemote();
+	}
+
+	private renderRemote() {
+		const nodes: SVGElement[] = [];
+		// Schrift in CSS-px, unabhängig vom Zoom der Fläche
+		const fs = 11 / (this.scale || 1);
+		for (const { key, stroke, label } of this.remoteGhosts) {
+			const p = stroke.points;
+			if (p.length < 3) continue;
+			const g = document.createElementNS(SVG_NS, "g");
+			g.dataset.key = key;
+			g.dataset.stroke = stroke.id;
+			g.classList.add("ink-remote-stroke");
+			const d = outlineSvg(p, stroke, false);
+			if (d) {
+				const path = g.appendChild(document.createElementNS(SVG_NS, "path"));
+				path.setAttribute("d", d);
+				path.setAttribute("fill", resolveColor(stroke.color, this.doc.space, this.el));
+				path.setAttribute("fill-opacity", stroke.tool === "hl" ? String(HL_ALPHA * 0.7) : "0.55");
+			}
+			if (label.name) {
+				const x = p[p.length - 3];
+				const y = p[p.length - 2];
+				const text = g.appendChild(document.createElementNS(SVG_NS, "text"));
+				text.textContent = label.name;
+				text.setAttribute("x", String(x + fs * 0.6));
+				text.setAttribute("y", String(y - fs * 0.6));
+				text.setAttribute("font-size", String(fs));
+				text.setAttribute("fill", "#fff");
+				text.setAttribute("paint-order", "stroke");
+				text.setAttribute("stroke", label.color);
+				text.setAttribute("stroke-width", String(fs * 0.5));
+				text.setAttribute("stroke-linejoin", "round");
+			}
+			nodes.push(g);
+		}
+		this.remoteGroup.replaceChildren(...nodes);
+		this.el.dataset.remote = String(nodes.length);
 	}
 
 	/** Band-Ebene neu aufbauen (wenige Elemente – billiger als Buchführung über Änderungen). */
@@ -187,6 +238,7 @@ export class Surface {
 		this.dpr = dpr;
 		this.scale = scaleFor(this.doc.w, width);
 		this.applyPattern();
+		if (!sameGeometry && this.remoteGhosts.length) this.renderRemote();
 		this.onLayout?.(width, dpr);
 
 		const wanted = tileLayout(this.doc.h * this.scale);

@@ -1,4 +1,5 @@
 import { debounce, getIconIds, loadPdfJs, Notice, Platform, Plugin, TFile, type TAbstractFile } from "obsidian";
+import { InkApi } from "./api";
 import { InkBlockChild } from "./block/InkBlockChild";
 import type { InkEditor } from "./block/InkEditor";
 import { registerCommands } from "./commands";
@@ -20,6 +21,8 @@ import { runTuning } from "./training/runTuning";
 export default class InkBlocksPlugin extends Plugin {
 	declare settings: InkSettings;
 	store!: InkStore;
+	/** Öffentliche Schnittstelle für andere Plugins (siehe src/api.ts). */
+	api!: InkApi;
 	ocr!: OcrService;
 	/** Proben des Schreibtrainings */
 	training!: SampleStore;
@@ -48,6 +51,7 @@ export default class InkBlocksPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		this.api = new InkApi(this);
 		this.store = new InkStore(this);
 		this.training = new SampleStore(this);
 		this.ocr = new OcrService(this);
@@ -73,6 +77,7 @@ export default class InkBlocksPlugin extends Plugin {
 	}
 
 	onunload() {
+		this.api.destroy();
 		this.saveSoon.run();
 		this.ocr.dispose();
 		this.store.dispose();

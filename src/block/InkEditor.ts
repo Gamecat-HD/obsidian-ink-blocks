@@ -94,6 +94,8 @@ export class InkEditor {
 		});
 		plugin.editors.add(this);
 		this.setupBackground();
+		// Fremde Striche, die gerade entstehen (Zusammenarbeit über api.setRemoteStroke)
+		this.surface.drawRemote(plugin.api.ghostsFor(entry.path));
 	}
 
 	get entry(): InkEntry {
@@ -121,6 +123,7 @@ export class InkEditor {
 	/** Dokument neu geladen (Sync) oder in einer anderen Ansicht geändert. */
 	setDoc() {
 		this.surface.setDoc(this.host.entry.doc);
+		this.surface.drawRemote(this.host.plugin.api.ghostsFor(this.host.entry.path));
 		this.selection.validate();
 		this.toolbar.update();
 	}
@@ -192,12 +195,14 @@ export class InkEditor {
 		this.surface.redraw(opBounds(op));
 		this.host.commit();
 		this.toolbar.update();
+		this.host.plugin.api.emitCommit(this.host.entry.path);
 	}
 
 	private readonly onOp = (op: InkOp) => {
 		this.host.entry.history.push(op);
 		this.host.commit();
 		this.toolbar.update();
+		this.host.plugin.api.emitCommit(this.host.entry.path);
 	};
 
 	private setupBackground() {
