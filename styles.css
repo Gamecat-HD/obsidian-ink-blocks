@@ -162,6 +162,13 @@
 	border-left: 1px solid var(--background-modifier-border);
 }
 
+/* Rückgängig, Ausklappen, Löschen bleiben rechts sichtbar, auch wenn die Leiste quer scrollt (Tablet: 40-px-Knöpfe). */
+.ink-tb-edit {
+	position: sticky;
+	right: 0;
+	background: var(--background-secondary);
+}
+
 .ink-toolbar button {
 	width: 28px;
 	height: 28px;

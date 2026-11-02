@@ -117,6 +117,7 @@ export class Toolbar {
 		}
 
 		const edit = this.group();
+		edit.addClass("ink-tb-edit");
 		this.undoBtn = this.button(edit, "undo-2", "Rückgängig (Strg+Z)", () => actions.undo());
 		this.redoBtn = this.button(edit, "redo-2", "Wiederholen (Strg+Umschalt+Z)", () => actions.redo());
 		this.bgBtn = this.button(edit, "align-justify", "Hintergrund und Zeilenabstand", () => this.showPatternMenu());
