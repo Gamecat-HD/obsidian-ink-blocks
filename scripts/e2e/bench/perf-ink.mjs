@@ -7,7 +7,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const ID = "obsidian-ink-blocks";
-export const options = { width: 1280, height: 1600 };
+// PLUGIN_FROM=<Ordner mit main.js/manifest.json/styles.css> misst einen anderen Stand (z. B. vor der Optimierung).
+export const options = { width: 1280, height: 1600, pluginFrom: process.env.PLUGIN_FROM };
 
 export default async (h) => {
 	await h.evaluate(async () => {
@@ -149,21 +150,50 @@ export default async (h) => {
 			const live2 = await liveStroke(1000, 500);
 			r.live1000_moveAtEnd = live2.moveAtEnd;
 			r.finishStroke1000 = live2.finish;
-			// Neu-Laden: gleiches Dokument, neue Objekte (wie nach decodeInk einer fremden Änderung) + 1 neuer Strich
+			// Fremde Änderung (Sync/Tandem): Datei bekommt von außen einen Strich dazu → Lesen, Zusammenführen,
+			// Neumalen. Gemessen vom Schreiben bis zum gemalten Ergebnis.
+			plugin.store.touch(entry);
+			await plugin.store.flush(entry.path);
+			const file = app.vault.getFileByPath(entry.path);
 			const reloads = [];
 			for (let i = 0; i < 3; i++) {
-				const fresh = entry.doc.strokes.map((s) => ({ ...s, points: s.points.slice() }));
-				fresh.push(handStroke(100 + i * 50, 200, 40, `r${count}-${i}`));
+				const raw = JSON.parse(await app.vault.read(file));
+				const q = raw.q ?? 10;
+				const sp = handStroke(100 + i * 50, 200, 40, "x").points;
+				const enc = [];
+				for (let j = 0; j < sp.length; j += 3) {
+					const prev = j ? [Math.round(sp[j - 3] * q), Math.round(sp[j - 2] * q), Math.round(sp[j - 1] * 255)] : [0, 0, 0];
+					enc.push(Math.round(sp[j] * q) - prev[0], Math.round(sp[j + 1] * q) - prev[1], Math.round(sp[j + 2] * 255) - prev[2]);
+				}
+				raw.strokes.push({ id: `r${count}-${i}`, t: "pen", c: 0, s: 3, p: enc });
+				const before = entry.doc.strokes.length;
 				t0 = performance.now();
-				entry.doc.strokes = fresh;
-				editor.setDoc();
-				await frame();
-				await frame();
+				await app.vault.modify(file, JSON.stringify(raw));
+				while (entry.doc.strokes.length === before && performance.now() - t0 < 5000) await frame();
+				// bis alle Kacheln im Bild wieder gemalt sind (neu angelegte Kacheln malen erst, wenn sichtbar)
+				const ready = () =>
+					[...el.querySelectorAll("canvas.ink-tile")].every((c) => {
+						const r = c.getBoundingClientRect();
+						return r.bottom < 0 || r.top > innerHeight || c.width === Math.round(el.clientWidth * devicePixelRatio);
+					});
+				do await frame();
+				while (!ready() && performance.now() - t0 < 5000);
 				flush();
 				reloads.push(performance.now() - t0);
 				await settle();
 			}
 			r.reloadToPainted = median(reloads);
+			// Eigenes Speichern (Kodieren + Schreiben + eigenes modify-Ereignis)
+			const saves = [];
+			for (let i = 0; i < 3; i++) {
+				entry.doc.strokes.push(handStroke(100, 600 + i * 20, 30, `w${count}-${i}`));
+				plugin.store.touch(entry);
+				t0 = performance.now();
+				await plugin.store.flush(entry.path);
+				saves.push(performance.now() - t0);
+				await settle();
+			}
+			r.save = median(saves);
 			// Radieren (ganze Striche): Bewegung quer über die Fläche
 			plugin.settings.tools.tool = "eraser";
 			const et = [];

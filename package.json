@@ -11,6 +11,7 @@
 		"test": "vitest run",
 		"e2e": "node scripts/e2e/run.mjs",
 		"bench:decoder": "node scripts/bench/run.mjs",
+		"bench:ink": "node scripts/bench/ink.mjs",
 		"fetch-models": "node scripts/fetch-models.mjs"
 	},
 	"license": "UNLICENSED",
