@@ -8,6 +8,7 @@ import { formatBgLink, linkMatchesPath, parseBgLink } from "../block/bgLink";
 import { findInkFences, replaceFenceBody } from "../block/locate";
 import { parseBlock, setField } from "../block/source";
 import { backgroundKind } from "../render/background";
+import { timeSlicer } from "../util/yield";
 
 export type InkEvent = "reloaded" | "deleted" | "changed";
 export type InkListener = (event: InkEvent) => void;
@@ -323,7 +324,9 @@ export class InkStore {
 			return data;
 		};
 
+		const slice = timeSlicer();
 		for (const note of vault.getMarkdownFiles()) {
+			await slice();
 			const text = await vault.cachedRead(note);
 			if (!text.includes(needle) || !text.includes("ink")) continue;
 			await vault.process(note, (data) => rewrite(data, note.path));

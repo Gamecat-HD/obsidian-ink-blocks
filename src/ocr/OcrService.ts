@@ -5,6 +5,7 @@ import type { Stroke } from "../model/ink-format";
 import type { InkEntry } from "../store/InkStore";
 import { fnv1a } from "../util/hash";
 import { readLocal, writeLocal } from "../util/local";
+import { timeSlicer } from "../util/yield";
 import { BENCHMARK_TITLE } from "./benchmark";
 import { markdownToCorpus } from "./corpus";
 import { HtrEngine, TesseractEngine, type DecoderSource, type Engine } from "./engines";
@@ -150,8 +151,11 @@ export class OcrService {
 		const files = vault.getMarkdownFiles().sort((a, b) => b.stat.mtime - a.stat.mtime);
 		const lines: string[] = [];
 		let size = 0;
+		// Bis zu 4 Mio. Zeichen: in Häppchen, damit Stifteingaben dazwischen nicht warten müssen
+		const slice = timeSlicer();
 		for (const file of files) {
 			if (size >= MAX_CORPUS_CHARS) break;
+			await slice();
 			const md = await vault.cachedRead(file);
 			// Die OCR-Messnotiz enthält die Vorgabesätze – im LM würde sie die Messung verfälschen.
 			if (md.startsWith(BENCHMARK_TITLE)) continue;
