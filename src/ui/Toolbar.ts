@@ -56,6 +56,8 @@ export class Toolbar {
 	private readonly bar: HTMLElement;
 	private readonly toolButtons = new Map<ToolId, HTMLElement>();
 	private readonly swatches: HTMLElement[] = [];
+	/** Stand der eigenen Farben beim letzten Aufbau (siehe update). */
+	private customKey: string | null = null;
 	private readonly customEl: HTMLElement;
 	private readonly addColorBtn: HTMLElement;
 	private readonly colorInput: HTMLInputElement;
@@ -164,9 +166,12 @@ export class Toolbar {
 			setTooltip(sw, `Farbe ${i + 1}`);
 		});
 		const kind = this.colorKind();
-		this.customEl.empty();
 		this.addColorBtn.toggle(kind !== null);
-		for (const color of kind ? this.plugin.settings.customColors[kind] : []) {
+		// Eigene Farben nur neu aufbauen, wenn sich etwas geändert hat (update läuft nach jedem Strich).
+		const customs = kind ? this.plugin.settings.customColors[kind] : [];
+		const customKey = `${kind}|${customs.join(",")}|${current}`;
+		if (customKey !== this.customKey) this.customEl.empty();
+		for (const color of customKey !== this.customKey ? customs : []) {
 			const sw = this.customEl.createEl("button", { cls: "ink-tb-swatch clickable-icon is-custom" });
 			sw.style.setProperty("--swatch", color);
 			sw.dataset.color = color;
@@ -179,6 +184,7 @@ export class Toolbar {
 				this.removeCustomColor(color, e);
 			});
 		}
+		this.customKey = customKey;
 		const width = hl ? t.hlWidth : tape ? t.tapeWidth : t.tool === "eraser" ? t.eraserWidth : t.penWidth;
 		this.widths.forEach((btn, i) => btn.toggleClass("is-active", i === width));
 		this.bar.toggleClass("is-eraser", t.tool === "eraser");
@@ -192,12 +198,15 @@ export class Toolbar {
 		const tapeState = this.actions.tapeState();
 		this.tapeBtn.toggle(tapeState !== "none");
 		const revealed = tapeState === "revealed";
-		setIcon(this.tapeBtn, revealed ? "eye-off" : "eye");
-		setTooltip(this.tapeBtn, revealed ? "Alle Abdeckbänder wieder zudecken" : "Alle Abdeckbänder aufdecken");
+		if (this.tapeBtn.dataset.revealed !== String(revealed)) {
+			this.tapeBtn.dataset.revealed = String(revealed);
+			setIcon(this.tapeBtn, revealed ? "eye-off" : "eye");
+			setTooltip(this.tapeBtn, revealed ? "Alle Abdeckbänder wieder zudecken" : "Alle Abdeckbänder aufdecken");
+		}
 		this.tapeBtn.toggleClass("is-active", revealed);
 		this.bgBtn.toggle(pattern !== null);
 		if (pattern) {
-			setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
+			if (this.bgBtn.dataset.bg !== pattern.style) setIcon(this.bgBtn, BG_ICON[pattern.style].icon);
 			const what = pattern.style === "ruled" ? "Zeilenabstand" : pattern.style === "dots" ? "Punktabstand" : "Kästchengröße";
 			setTooltip(this.bgBtn, `Hintergrund: ${BG_ICON[pattern.style].label.toLowerCase()}${pattern.style === "blank" ? "" : ` · ${what} ${pattern.gap}`}`);
 			this.bgBtn.dataset.bg = pattern.style;
