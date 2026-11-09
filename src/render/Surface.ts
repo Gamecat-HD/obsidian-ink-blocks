@@ -5,6 +5,7 @@ import type { LiveStroke as ApiLiveStroke, PointerPos, RemoteLabel } from "../ap
 import { HL_ALPHA, outlineSvg, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
 import { strokeDiff, StrokeIndex } from "./strokeIndex";
 import { scaleFor, tileLayout, type Tile } from "./transform";
+import { BlameLayer, type InkBlame } from "./BlameLayer";
 
 interface TileState {
 	tile: Tile;
@@ -85,6 +86,8 @@ export class Surface {
 	private remoteGhosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[] = [];
 	private readonly outlineCache = new Map<string, { sig: string; d: string }>();
 	private remotePointers: { key: string; pos: PointerPos; label: RemoteLabel }[] = [];
+	/** Wer hat welchen Strich gezeichnet (nur, solange eine Zusammenarbeits-Erweiterung es liefert). */
+	private blameLayer: BlameLayer | null = null;
 	private readonly stripesId = `ink-tape-stripes-${++tapeIds}`;
 	private scale = 1;
 	private cssWidth = 0;
@@ -140,6 +143,7 @@ export class Surface {
 	}
 
 	destroy() {
+		this.blameLayer?.destroy();
 		cancelAnimationFrame(this.resizeFrame);
 		this.io.disconnect();
 		this.ro.disconnect();
@@ -215,6 +219,19 @@ export class Surface {
 		const viewBox = `0 0 ${w} ${h}`;
 		if (this.tapeSvg.getAttribute("viewBox") !== viewBox) this.tapeSvg.setAttribute("viewBox", viewBox);
 		this.syncTape();
+		this.blameLayer?.sync();
+	}
+
+	/** Blame-Anzeige (siehe BlameLayer); `null` blendet sie aus. */
+	setBlame(blame: InkBlame | null) {
+		if (!blame && !this.blameLayer) return;
+		this.blameLayer ??= new BlameLayer(this);
+		this.blameLayer.set(blame);
+	}
+
+	/** Strich gerade angehoben (Lasso) und daher nicht auf den Kacheln. */
+	isHidden(id: string): boolean {
+		return this.hidden.has(id);
 	}
 
 	/** Fremde, gerade entstehende Striche halbtransparent mit Namensschild zeigen. */
@@ -375,6 +392,7 @@ export class Surface {
 		this.laidOut = key;
 		this.applyPattern();
 		if (!sameGeometry && (this.remoteGhosts.length || this.remotePointers.length)) this.renderRemote();
+		if (!sameGeometry) this.blameLayer?.sync();
 		this.onLayout?.(width, dpr);
 
 		const wanted = tileLayout(this.doc.h * this.scale);

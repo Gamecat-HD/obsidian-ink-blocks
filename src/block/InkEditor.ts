@@ -96,6 +96,7 @@ export class InkEditor {
 		this.setupBackground();
 		// Fremde Striche, die gerade entstehen (Zusammenarbeit über api.setRemoteStroke)
 		this.surface.drawRemote(plugin.api.ghostsFor(entry.path), plugin.api.pointersFor(entry.path));
+		this.surface.setBlame(plugin.api.blameFor(entry.path));
 	}
 
 	get entry(): InkEntry {
@@ -124,6 +125,7 @@ export class InkEditor {
 	setDoc() {
 		this.surface.setDoc(this.host.entry.doc);
 		this.surface.drawRemote(this.host.plugin.api.ghostsFor(this.host.entry.path), this.host.plugin.api.pointersFor(this.host.entry.path));
+		this.surface.setBlame(this.host.plugin.api.blameFor(this.host.entry.path));
 		this.selection.validate();
 		this.toolbar.update();
 	}

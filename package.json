@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ink-blocks",
-	"version": "0.6.1",
+	"version": "0.7.0",
 	"private": true,
 	"description": "Obsidian-Plugin: Handschrift-Blöcke in Notizen, PDF-Arbeitsblätter, lokale Texterkennung",
 	"main": "main.js",

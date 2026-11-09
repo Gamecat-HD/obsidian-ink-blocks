@@ -2,7 +2,7 @@
 
 Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (PDF-Seiten/Bilder) per Hand ausfüllen. Die Handschrift wird **lokal und kostenlos** in Text umgewandelt, damit der Vault und die Lernplattform sie durchsuchen können.
 
-> Status: **v0.6.1**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich, iPad-Modus, Linienabstand, Textmarker mit Lineal, Formerkennung (M9–M14); Beam-Search mit Vault-Sprachmodell (M15); Lasso, präziser Radierer, Abdeckband, eigene Farben, Gesten/Zoom (M16–M20); Eingabeprofile für Tablets und Schreibtraining (M21–M24); Schreibfläche löschen (M25); stabile Ansicht beim Schreiben und Schnittstelle für Echtzeit-Zusammenarbeit (M26–M29); flüssigeres Schreiben auf vollen Seiten (M30). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus, simuliertem Stift und Touch; Stift live auf dem HP-Laptop bestätigt → [docs/HARDWARE.md](docs/HARDWARE.md).
+> Status: **v0.7.0**: Schreibflächen, Arbeitsblätter, lokale Texterkennung (M1–M7); Ausklappen und Beschriften (M8); Live-Strich, iPad-Modus, Linienabstand, Textmarker mit Lineal, Formerkennung (M9–M14); Beam-Search mit Vault-Sprachmodell (M15); Lasso, präziser Radierer, Abdeckband, eigene Farben, Gesten/Zoom (M16–M20); Eingabeprofile für Tablets und Schreibtraining (M21–M24); Schreibfläche löschen (M25); stabile Ansicht beim Schreiben und Schnittstelle für Echtzeit-Zusammenarbeit (M26–M29); flüssigeres Schreiben auf vollen Seiten (M30); Blame für Zusammenarbeit (M31). Getestet in einer echten Obsidian-Instanz (E2E) mit Maus, simuliertem Stift und Touch; Stift live auf dem HP-Laptop bestätigt → [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ## Bedienung
 
@@ -83,6 +83,7 @@ text: |
 Ink Blocks bietet eine optionale Schnittstelle für Echtzeit-Zusammenarbeit (`app.plugins.plugins["obsidian-ink-blocks"].api`, siehe `src/api.ts`). Das Plugin [Tandem](https://github.com/Gamecat-HD/obsidian-tandem) nutzt sie:
 - Andere sehen deinen Strich **schon während des Schreibens** als halbtransparenten Strich mit deinem Namen. Der fertige Strich (gleiche ID) ersetzt ihn.
 - Man sieht, wo der Stift (oder die Maus) der anderen gerade über der Fläche ist: ein Ring mit Namen, solange er schwebt, und ein gefüllter Punkt beim Schreiben.
+- **Blame:** Ist in Tandem „Blame“ an, bekommt jeder Strich einen weichen Schein in der Farbe der Person, die ihn gezeichnet hat. Oben rechts steht eine Legende (wer, wann zuletzt). Fährt man mit Maus oder Stift über einen Strich, erscheinen Name, Gerät und Zeit, und die Striche dieser Person werden hervorgehoben (`api.setBlame`).
 - Nach jeder Änderung wird sofort gespeichert, statt nach 1,5 s.
 - Zeichnet jemand anderes auf derselben Fläche, bleibt dein Undo-Verlauf erhalten (nur wenn fremde Änderungen etwas entfernen, wird er geleert).
 
