@@ -125,7 +125,8 @@ interface StoredStroke {
  */
 const lineCache = new WeakMap<Stroke, string>();
 
-function strokeLine(s: Stroke): string {
+/** Kodierte Dateizeile eines Strichs (gecacht) – auch als exakter Vergleich „gleicher Strich in der Datei“. */
+export function strokeLine(s: Stroke): string {
 	let line = lineCache.get(s);
 	if (line === undefined) {
 		const stored: StoredStroke = { id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) };

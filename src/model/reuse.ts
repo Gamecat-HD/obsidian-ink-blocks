@@ -1,4 +1,4 @@
-import type { InkData, Stroke } from "./ink-format";
+import { strokeLine, type InkData, type Stroke } from "./ink-format";
 
 /** Abweichung, die die Datei durch Quantisierung erzeugt (x/y: 1/q mit q = 10, Druck: 1/255) – plus Rundung. */
 const COORD_TOL = 0.05 + 1e-6;
@@ -19,7 +19,9 @@ export function sameStroke(a: Stroke, b: Stroke): boolean {
 		if (Math.abs(p[i] - q[i]) > COORD_TOL || Math.abs(p[i + 1] - q[i + 1]) > COORD_TOL) return false;
 		if (Math.abs(p[i + 2] - q[i + 2]) > PRESSURE_TOL) return false;
 	}
-	return true;
+	// Zusätzlich exakt: dieselbe Dateizeile (schließt Fälle aus, in denen die Toleranz zwei verschieden
+	// gerundete Fassungen gleichsetzen würde)
+	return strokeLine(a) === strokeLine(b);
 }
 
 /**
