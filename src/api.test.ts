@@ -73,4 +73,23 @@ describe("InkApi – Zeiger", () => {
 		expect(api.pointersFor("a.ink")).toHaveLength(0);
 		api.destroy();
 	});
+
+	it("Blame wird an offene Flächen der Datei weitergereicht und lässt sich wieder ausschalten", () => {
+		const got: unknown[] = [];
+		const plugin = {
+			store: { peek: () => undefined, flush: async () => {} },
+			editors: new Set([
+				{ entry: { path: "a.ink" }, surface: { setBlame: (b: unknown) => got.push(b) } },
+				{ entry: { path: "b.ink" }, surface: { setBlame: () => got.push("falsch") } },
+			]),
+		};
+		const api = new InkApi(plugin as never);
+		const blame = { authors: [{ key: "bob", name: "Bob", color: "#00f" }], strokes: { s1: [0, 1] as [number, number] } };
+		api.setBlame("a.ink", blame);
+		expect(api.blameFor("a.ink")).toBe(blame);
+		api.setBlame("a.ink", null);
+		api.setBlame("a.ink", null); // zweites Ausschalten: nichts mehr zu tun
+		expect(got).toEqual([blame, null]);
+		expect(api.blameFor("a.ink")).toBeNull();
+	});
 });

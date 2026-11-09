@@ -5,12 +5,16 @@
  * - Eigene Striche während des Zeichnens beobachten (`onLiveStroke`) → an andere senden.
  * - Fremde, gerade entstehende Striche als halbtransparente „Geister“ mit Namen anzeigen (`setRemoteStroke`).
  *   Endet ein fremder Strich, bleibt sein Geist stehen, bis der fertige Strich (gleiche ID) im Dokument ist.
+ * - Wer hat welchen Strich gezeichnet (`setBlame`): Schein in der Farbe der Person, Legende, Name beim Überfahren.
  * - Nach jeder abgeschlossenen Änderung sofort speichern lassen (`onCommit` + `flush`), statt auf die
  *   Speicherverzögerung zu warten.
  * Ohne Nutzer dieser Schnittstelle ändert sich am Verhalten von Ink Blocks nichts.
  */
 import type InkBlocksPlugin from "./main";
 import type { InkColor, Tool } from "./model/ink-format";
+import type { InkBlame } from "./render/BlameLayer";
+
+export type { InkBlame };
 
 export interface LiveStroke {
 	/** Wird zur ID des fertigen Strichs. */
@@ -61,6 +65,8 @@ export class InkApi {
 	private pointers = new Map<string, Map<string, { pos: PointerPos; label: RemoteLabel }>>();
 	/** Datei → Schlüssel (z. B. Person) → Geist */
 	private ghosts = new Map<string, Map<string, Ghost>>();
+	/** Datei → Blame (wer hat welchen Strich gezeichnet) */
+	private blames = new Map<string, InkBlame>();
 	private sweepTimer = 0;
 
 	constructor(private readonly plugin: InkBlocksPlugin) {}
@@ -145,6 +151,20 @@ export class InkApi {
 		this.scheduleSweep();
 	}
 
+	/**
+	 * Zeigen, wer welchen Strich gezeichnet hat (Blame); `null` blendet es aus. Darf bei jeder Änderung erneut
+	 * aufgerufen werden – nur neue/entfernte Striche werden neu gezeichnet. Funktionstest: `typeof api.setBlame`.
+	 */
+	setBlame(file: string, blame: InkBlame | null) {
+		if (blame) this.blames.set(file, blame);
+		else if (!this.blames.delete(file)) return;
+		for (const ed of this.plugin.editors) if (ed.entry.path === file) ed.surface.setBlame(blame);
+	}
+
+	blameFor(file: string): InkBlame | null {
+		return this.blames.get(file) ?? null;
+	}
+
 	/** Alle Geister und Zeiger einer Person entfernen (z. B. offline gegangen). */
 	clearRemote(key: string) {
 		const files = new Set<string>();
@@ -191,6 +211,7 @@ export class InkApi {
 		window.clearTimeout(this.sweepTimer);
 		this.ghosts.clear();
 		this.pointers.clear();
+		this.blames.clear();
 		this.pointerListeners.clear();
 		this.live.clear();
 		this.commits.clear();
