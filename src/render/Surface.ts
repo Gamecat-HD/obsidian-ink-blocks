@@ -472,7 +472,7 @@ export class Surface {
 			if (!t.visible || !t.canvas.width) continue;
 			const top = t.tile.top / scale;
 			const bottom = (t.tile.top + t.tile.height) / scale;
-			let regions = bounds.filter((b) => b.maxY >= top && b.minY <= bottom);
+			let regions = mergeOverlapping(bounds.filter((b) => b.maxY >= top && b.minY <= bottom));
 			if (!regions.length) continue;
 			if (regions.length > MAX_REGIONS) regions = [regions.reduce(union)];
 			for (const r of regions) this.paint(t, r, this.live ?? undefined);
@@ -604,6 +604,26 @@ export class Surface {
 			if (t.visible && t.canvas.width && bottom >= t.tile.top && top <= t.tile.top + t.tile.height) this.paint(t, region, live);
 		}
 	}
+}
+
+/**
+ * Sich überlappende Bereiche zusammenfassen – sonst würden Striche im Überlapp zweimal gemalt (z. B. Strich
+ * und Rest des Live-Strichs beim Absetzen, die fast deckungsgleich sind).
+ */
+function mergeOverlapping(list: Bounds[]): Bounds[] {
+	const out: Bounds[] = [];
+	for (let b of list) {
+		for (let i = 0; i < out.length; ) {
+			const o = out[i];
+			if (o.maxX >= b.minX && o.minX <= b.maxX && o.maxY >= b.minY && o.minY <= b.maxY) {
+				b = union(o, b);
+				out.splice(i, 1);
+				i = 0; // vergrößert: wieder von vorn prüfen
+			} else i++;
+		}
+		out.push(b);
+	}
+	return out;
 }
 
 function geometryKey(doc: InkData): string {
