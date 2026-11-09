@@ -119,16 +119,30 @@ interface StoredStroke {
 	sh?: 1;
 }
 
+/**
+ * Kodierte Zeile je Strich-Objekt. Striche sind unveränderlich (neue Form = neues Objekt), daher bleibt die
+ * Zeile gültig – Speichern nach jedem Strich (Zusammenarbeit: sofort) kodiert nur noch die neuen.
+ */
+const lineCache = new WeakMap<Stroke, string>();
+
+/** Kodierte Dateizeile eines Strichs (gecacht) – auch als exakter Vergleich „gleicher Strich in der Datei“. */
+export function strokeLine(s: Stroke): string {
+	let line = lineCache.get(s);
+	if (line === undefined) {
+		const stored: StoredStroke = { id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) };
+		if (s.simulated) stored.sp = 1;
+		if (s.shape) stored.sh = 1;
+		line = JSON.stringify(stored);
+		lineCache.set(s, line);
+	}
+	return line;
+}
+
 export function encodeInk(doc: InkData): string {
 	const head: Record<string, unknown> = { v: doc.v, id: doc.id, space: doc.space, w: doc.w, h: doc.h, q: Q };
 	if (doc.bg) head.bg = doc.bg;
 	if (doc.ocr) head.ocr = doc.ocr;
-	const strokes = doc.strokes.map((s) => {
-		const stored: StoredStroke = { id: s.id, t: s.tool, c: s.color, s: s.size, p: encodePoints(s.points) };
-		if (s.simulated) stored.sp = 1;
-		if (s.shape) stored.sh = 1;
-		return JSON.stringify(stored);
-	});
+	const strokes = doc.strokes.map(strokeLine);
 	const headJson = JSON.stringify(head).slice(0, -1);
 	return `${headJson},"strokes":[${strokes.length ? `\n${strokes.join(",\n")}\n` : ""}]}\n`;
 }

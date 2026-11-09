@@ -7,6 +7,7 @@ import { markPenSeen, penSeen, resolvePenOnly, storedProfile } from "./input/pro
 import type { InkClipboard } from "./input/Selection";
 import { OcrService } from "./ocr/OcrService";
 import { rasterizeSegment } from "./ocr/raster";
+import { disposeBackgrounds } from "./render/background";
 import { referenceHeight, segmentLines } from "./ocr/segment";
 
 /** Für Messskripte (scripts/bench/real.mjs): Segmentierung und Rasterung ohne Worker. */
@@ -81,6 +82,7 @@ export default class InkBlocksPlugin extends Plugin {
 		this.saveSoon.run();
 		this.ocr.dispose();
 		this.store.dispose();
+		disposeBackgrounds();
 	}
 
 	/** Zeichnet auf diesem Gerät nur der Stift (Finger scrollen)? Siehe input/profile.ts. */

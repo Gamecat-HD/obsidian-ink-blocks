@@ -88,7 +88,8 @@ ocr/OcrService.ts         Queue mit 10 s Leerlauf je Doc, Zeilen-Cache, Fallback
   - Kacheln werden lazy angelegt (IntersectionObserver).
   - Transform `setTransform(dpr·scale,0,0,dpr·scale,0,−tileTop·dpr)`.
   - Ein fertiger Strich wird nur in die Kacheln gezeichnet, die seine BBox berührt.
-  - Bei Radieren, Undo, Merge oder Reload werden nur die betroffenen Kacheln neu gezeichnet. Textmarker kommen zuerst (Alpha 0,35), dann die Stifte.
+  - Bei Radieren, Undo, Merge oder Reload werden nur die betroffenen Bereiche der Kacheln neu gezeichnet (auf ganze Geräte-Pixel erweitert, Striche aus einem räumlichen Index in Doc-Reihenfolge). Was sich geändert hat, ergibt der Vergleich der Strichlisten per Objektidentität; nach einem Reload behalten unveränderte Striche ihr Objekt (`model/reuse.ts`). Textmarker kommen zuerst (Alpha 0,35), dann die Stifte.
+  - Live-Strich (M30): Umriss inkrementell (`render/liveOutline.ts`, bitgleich mit perfect-freehand), Pfad direkt aus den Umrisspunkten, neu gemalt wird nur der Bereich, in dem sich der Umriss geändert hat (`outlineChange`). Messung: `npm run bench:ink`, `scripts/e2e/bench/perf-ink.mjs`.
   - Bei Resize wird pro rAF zusammengefasst, das PDF-Bitmap nach 200 ms Debounce neu gerendert.
 - **Eingabe:**
   - Am Container `stopPropagation` auf pointerdown, mousedown, click und touchstart, damit Live Preview nicht in den Quelltext springt.

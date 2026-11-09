@@ -70,3 +70,17 @@ describe("encodeInk/decodeInk", () => {
 		expect(() => decodeInk(JSON.stringify(bad))).toThrow(/Punkte/);
 	});
 });
+
+describe("encodeInk – Zeilen-Cache", () => {
+	it("gleiches Ergebnis beim wiederholten Kodieren und für inhaltsgleiche neue Objekte", () => {
+		const doc = sample();
+		const first = encodeInk(doc);
+		expect(encodeInk(doc)).toBe(first);
+		const copy: InkData = { ...doc, strokes: doc.strokes.map((s) => ({ ...s, points: s.points.slice() })) };
+		expect(encodeInk(copy)).toBe(first);
+		// hinzugefügter Strich erscheint, entfernter verschwindet
+		const more: InkData = { ...doc, strokes: [...doc.strokes, { id: "neu", tool: "pen", color: 1, size: 2, points: [1, 2, 0.5] }] };
+		expect(decodeInk(encodeInk(more)).strokes.map((s) => s.id)).toEqual([...doc.strokes.map((s) => s.id), "neu"]);
+		expect(decodeInk(encodeInk({ ...doc, strokes: doc.strokes.slice(1) })).strokes).toHaveLength(doc.strokes.length - 1);
+	});
+});

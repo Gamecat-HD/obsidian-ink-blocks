@@ -1,9 +1,10 @@
-import type { InkColor, InkData } from "../model/ink-format";
+import type { InkColor, InkData, Stroke } from "../model/ink-format";
 import { strokeBounds, type Bounds } from "../model/ops";
 import type { Pattern } from "../model/pattern";
 import type { LiveStroke as ApiLiveStroke, PointerPos, RemoteLabel } from "../api";
 import { HL_ALPHA, outlineSvg, resolveColor, strokePath, strokeSvg, TAPE_REVEALED_ALPHA } from "./strokes";
-import { scaleFor, tileLayout, tilesForBounds, type Tile } from "./transform";
+import { strokeDiff, StrokeIndex } from "./strokeIndex";
+import { scaleFor, tileLayout, type Tile } from "./transform";
 
 interface TileState {
 	tile: Tile;
@@ -20,6 +21,22 @@ export interface LiveStroke {
 	highlighter: boolean;
 	/** Abdeckband: SVG-Pfad – landet in der Band-Ebene statt auf den Kacheln. */
 	tape?: string;
+	/**
+	 * Bereich (Doc-Einheiten), in dem sich der Strich seit dem letzten `drawLive` geändert hat (siehe
+	 * `outlineChange`). Ohne Angabe wird der ganze Strich neu gemalt.
+	 */
+	dirty?: Bounds;
+}
+
+/** Mehr Teilbereiche je Kachel werden zu einem zusammengefasst (jeder kostet eine Abfrage + Clip). */
+const MAX_REGIONS = 12;
+
+/** Lage der Fläche: Außenkante (`left`/`top`) und Innenkante ohne Rahmen (`x`/`y`), Clientkoordinaten. */
+export interface ScreenRect {
+	left: number;
+	top: number;
+	x: number;
+	y: number;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -46,6 +63,12 @@ export class Surface {
 	/** Der gerade entstehende Strich – wird bei jedem Neuzeichnen einer Kachel mitgemalt. */
 	private live: LiveStroke | null = null;
 	private tiles: TileState[] = [];
+	/** Räumlicher Index der Striche – Neuzeichnen eines Bereichs fragt nur die Striche in seiner Nähe ab. */
+	private readonly index = new StrokeIndex();
+	/** Strichliste, die die sichtbaren Kacheln zeigen (Stand des letzten Neumalens) – Basis für `strokeDiff`. */
+	private painted: readonly Stroke[] = [];
+	/** Zuletzt in die Band-Ebene gezeichnete Bänder (überspringt den Neuaufbau, wenn sich nichts geändert hat). */
+	private tapeState: { strokes: Stroke[]; hidden: Set<string>; revealed: number } | null = null;
 	/** Angehobene Striche (Lasso-Auswahl) – die Auswahl-Ebene zeigt sie, die Kacheln nicht. */
 	private hidden = new Set<string>();
 	/** Aufgedeckte Abdeckbänder (gehört dem Store-Eintrag, alle Ansichten teilen ihn). */
@@ -60,10 +83,13 @@ export class Surface {
 	/** Fremde, gerade entstehende Striche (Zusammenarbeit, siehe api.ts). */
 	private readonly remoteGroup: SVGGElement;
 	private remoteGhosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[] = [];
+	private readonly outlineCache = new Map<string, { sig: string; d: string }>();
 	private remotePointers: { key: string; pos: PointerPos; label: RemoteLabel }[] = [];
 	private readonly stripesId = `ink-tape-stripes-${++tapeIds}`;
 	private scale = 1;
 	private cssWidth = 0;
+	/** Breite/Modus des Dokuments beim letzten Layout (siehe `setDoc`). */
+	private laidOut = "";
 	private dpr = window.devicePixelRatio || 1;
 	private inkColor = "";
 	private readonly io: IntersectionObserver;
@@ -120,10 +146,24 @@ export class Surface {
 		this.el.remove();
 	}
 
+	/**
+	 * Dokument neu geladen (Sync, Zusammenarbeit) oder in einer anderen Ansicht geändert. Gleiche Geometrie:
+	 * Kacheln bleiben stehen, nur hinzugekommene/entfernte Striche werden neu gemalt (ein gerade entstehender
+	 * eigener Strich bleibt sichtbar). Sonst wie bisher: Kacheln neu anlegen.
+	 */
 	setDoc(doc: InkData) {
 		this.doc = doc;
 		this.updateSize();
-		this.layout(true);
+		// Vergleich mit dem Stand beim letzten Layout – das Dokument kann auch an Ort und Stelle geändert sein
+		// (Heft → Arbeitsblatt).
+		if (geometryKey(doc) !== this.laidOut || !this.cssWidth) {
+			// Alle Kacheln neu (leer, bis sichtbar) – sie zeigen danach den aktuellen Stand.
+			this.painted = doc.strokes.slice();
+			this.layout(true);
+			return;
+		}
+		this.layout();
+		this.repaintChanges([]);
 	}
 
 	setPattern(pattern: Pattern) {
@@ -131,19 +171,28 @@ export class Surface {
 		this.applyPattern();
 	}
 
+	/**
+	 * Lage der Fläche auf dem Bildschirm (ein Layout-Zugriff). Ein Pointer-Event samt seiner gebündelten
+	 * (coalesced) Events rechnet mit einer Messung, statt pro Punkt neu zu messen (siehe `toDocAt`).
+	 */
+	measure(): ScreenRect {
+		const r = this.el.getBoundingClientRect();
+		return { left: r.left, top: r.top, x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop };
+	}
+
 	/** Lage der Innenkante auf dem Bildschirm (Clientkoordinaten) – ändert sie sich, ist die Fläche verrutscht. */
 	screenOrigin(): { x: number; y: number } {
-		const r = this.el.getBoundingClientRect();
-		return { x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop };
+		return this.measure();
 	}
 
 	/** Clientkoordinaten → Doc-Einheiten (relativ zur Innenkante, ohne Rahmen). */
 	toDoc(clientX: number, clientY: number): { x: number; y: number } {
-		const r = this.el.getBoundingClientRect();
-		return {
-			x: (clientX - r.left - this.el.clientLeft) / this.scale,
-			y: (clientY - r.top - this.el.clientTop) / this.scale,
-		};
+		return this.toDocAt(this.measure(), clientX, clientY);
+	}
+
+	/** Wie `toDoc`, mit einer vorhandenen Messung. */
+	toDocAt(o: ScreenRect, clientX: number, clientY: number): { x: number; y: number } {
+		return { x: (clientX - o.x) / this.scale, y: (clientY - o.y) / this.scale };
 	}
 
 	/** Hinweis über der Fläche (z. B. fehlender Hintergrund); `null` entfernt ihn. */
@@ -153,12 +202,19 @@ export class Surface {
 	}
 
 	private updateSize() {
-		this.el.dataset.space = this.doc.space;
-		this.el.style.aspectRatio = `${this.doc.w} / ${this.doc.h}`;
-		this.el.dataset.strokes = String(this.doc.strokes.length);
-		this.tapeSvg.setAttribute("viewBox", `0 0 ${this.doc.w} ${this.doc.h}`);
-		this.renderTape();
-		this.renderRemote();
+		const { space, w, h, strokes } = this.doc;
+		const ds = this.el.dataset;
+		if (ds.space !== space) {
+			ds.space = space;
+			// Farbe der fremden Striche hängt am Modus (Tinte im Heft vs. schwarz auf dem Arbeitsblatt)
+			this.renderRemote();
+		}
+		const aspect = `${w} / ${h}`;
+		if (this.el.style.aspectRatio !== aspect) this.el.style.aspectRatio = aspect;
+		ds.strokes = String(strokes.length);
+		const viewBox = `0 0 ${w} ${h}`;
+		if (this.tapeSvg.getAttribute("viewBox") !== viewBox) this.tapeSvg.setAttribute("viewBox", viewBox);
+		this.syncTape();
 	}
 
 	/** Fremde, gerade entstehende Striche halbtransparent mit Namensschild zeigen. */
@@ -180,7 +236,7 @@ export class Surface {
 			g.dataset.key = key;
 			g.dataset.stroke = stroke.id;
 			g.classList.add("ink-remote-stroke");
-			const d = outlineSvg(p, stroke, false);
+			const d = this.remoteOutline(key, stroke);
 			if (d) {
 				const path = g.appendChild(document.createElementNS(SVG_NS, "path"));
 				path.setAttribute("d", d);
@@ -235,6 +291,25 @@ export class Surface {
 		}
 		this.remoteGroup.replaceChildren(...nodes);
 		this.el.dataset.pointers = String(this.remotePointers.length);
+		// Umrisse nicht mehr gezeigter Geister vergessen
+		if (this.outlineCache.size > this.remoteGhosts.length) {
+			const keys = new Set(this.remoteGhosts.map((g) => g.key));
+			for (const k of this.outlineCache.keys()) if (!keys.has(k)) this.outlineCache.delete(k);
+		}
+	}
+
+	/**
+	 * Umriss eines fremden Strichs – gemerkt, solange er sich nicht ändert: Neu gezeichnet wird bei jeder
+	 * Nachricht (auch nur Zeigerbewegungen anderer), neu berechnet nur der Strich, der gewachsen ist.
+	 */
+	private remoteOutline(key: string, s: ApiLiveStroke): string {
+		const p = s.points;
+		const sig = `${s.id}|${s.tool}|${s.size}|${s.simulated ? 1 : 0}|${p.length}|${p[p.length - 3]}|${p[p.length - 2]}|${p[p.length - 1]}`;
+		const hit = this.outlineCache.get(key);
+		if (hit?.sig === sig) return hit.d;
+		const d = outlineSvg(p, s, false);
+		this.outlineCache.set(key, { sig, d });
+		return d;
 	}
 
 	/** Band-Ebene neu aufbauen (wenige Elemente – billiger als Buchführung über Änderungen). */
@@ -242,6 +317,32 @@ export class Surface {
 		const tapes = this.doc.strokes.filter((s) => s.tool === "tape" && !this.hidden.has(s.id));
 		this.tapeGroup.replaceChildren(...tapes.map((s) => this.tapeElement(strokeSvg(s), s.color, this.revealed.has(s.id), s.id)));
 		this.el.dataset.tapes = String(tapes.length);
+		this.tapeState = { strokes: tapes, hidden: this.hidden, revealed: this.revealedKey() };
+	}
+
+	/** Band-Ebene nur neu aufbauen, wenn sich Bänder, Auswahl oder Aufdecken geändert haben. */
+	private syncTape() {
+		const st = this.tapeState;
+		if (st && st.hidden === this.hidden && st.revealed === this.revealedKey()) {
+			let i = 0;
+			let same = true;
+			for (const s of this.doc.strokes) {
+				if (s.tool !== "tape" || this.hidden.has(s.id)) continue;
+				if (st.strokes[i++] !== s) {
+					same = false;
+					break;
+				}
+			}
+			if (same && i === st.strokes.length) return;
+		}
+		this.renderTape();
+	}
+
+	/** Grober Schlüssel für den Aufdeck-Zustand (Größe + Inhalt), damit `syncTape` Änderungen bemerkt. */
+	private revealedKey(): number {
+		let k = this.revealed.size;
+		for (const id of this.revealed) for (let i = 0; i < id.length; i++) k = (k * 31 + id.charCodeAt(i)) | 0;
+		return k;
 	}
 
 	private tapeElement(d: string, color: InkColor, revealed: boolean, id?: string): SVGGElement {
@@ -266,12 +367,14 @@ export class Surface {
 		const width = this.el.clientWidth;
 		const dpr = window.devicePixelRatio || 1;
 		if (!width) return;
-		const sameGeometry = !force && width === this.cssWidth && dpr === this.dpr;
+		const key = geometryKey(this.doc);
+		const sameGeometry = !force && width === this.cssWidth && dpr === this.dpr && key === this.laidOut;
 		this.cssWidth = width;
 		this.dpr = dpr;
 		this.scale = scaleFor(this.doc.w, width);
+		this.laidOut = key;
 		this.applyPattern();
-		if (!sameGeometry && this.remoteGhosts.length) this.renderRemote();
+		if (!sameGeometry && (this.remoteGhosts.length || this.remotePointers.length)) this.renderRemote();
 		this.onLayout?.(width, dpr);
 
 		const wanted = tileLayout(this.doc.h * this.scale);
@@ -322,11 +425,29 @@ export class Surface {
 	}
 
 	redrawAll() {
-		this.updateSize();
 		this.inkColor = "";
+		this.tapeState = null; // Farben neu auflösen
+		this.updateSize();
+		this.repaintAll();
+	}
+
+	private repaintAll() {
+		this.painted = this.doc.strokes.slice();
 		for (const t of this.tiles) if (t.visible) this.drawTile(t);
 	}
 
+	/**
+	 * Alles neu malen, was sich seit dem letzten Neumalen geändert hat (Striche hinzugekommen/entfernt),
+	 * plus `extra`. So bleiben die Kacheln richtig, auch wenn eine andere Ansicht dasselbe Dokument geändert hat.
+	 */
+	private repaintChanges(extra: Bounds[]) {
+		const diff = strokeDiff(this.painted, this.doc.strokes);
+		if (diff === null) return this.repaintAll();
+		this.painted = this.doc.strokes.slice();
+		this.repaint(diff.length ? extra.concat(diff) : extra);
+	}
+
+	/** Nach einer Änderung am Dokument: nur die betroffenen Bereiche neu malen (beendet einen Live-Strich). */
 	redraw(bounds: Bounds[]) {
 		this.tapeLive.replaceChildren();
 		this.updateSize();
@@ -336,9 +457,26 @@ export class Surface {
 			this.liveBounds = null;
 		}
 		this.live = null;
-		const dirty = new Set<number>();
-		for (const b of bounds) for (const i of tilesForBounds(b, this.scale, this.tiles.map((t) => t.tile))) dirty.add(i);
-		for (const i of dirty) if (this.tiles[i]?.visible) this.drawTile(this.tiles[i]);
+		this.repaintChanges(bounds);
+	}
+
+	/**
+	 * Bereiche (Doc-Einheiten) auf allen sichtbaren Kacheln neu malen – jeweils nur den Ausschnitt, nicht die
+	 * ganze Kachel. Ergebnis wie beim Neumalen der ganzen Kachel, bis auf Antialiasing-Rauschen an einzelnen
+	 * Kantenpixeln (Skia rastert innerhalb eines Clips minimal anders, siehe E2E m30-render-regions).
+	 */
+	private repaint(bounds: Bounds[]) {
+		if (!bounds.length) return;
+		const { scale } = this;
+		for (const t of this.tiles) {
+			if (!t.visible || !t.canvas.width) continue;
+			const top = t.tile.top / scale;
+			const bottom = (t.tile.top + t.tile.height) / scale;
+			let regions = mergeOverlapping(bounds.filter((b) => b.maxY >= top && b.minY <= bottom));
+			if (!regions.length) continue;
+			if (regions.length > MAX_REGIONS) regions = [regions.reduce(union)];
+			for (const r of regions) this.paint(t, r, this.live ?? undefined);
+		}
 	}
 
 	private onIntersect(entries: IntersectionObserverEntry[]) {
@@ -359,8 +497,16 @@ export class Surface {
 
 	private drawTile(t: TileState) {
 		const { dpr } = this;
-		t.canvas.width = Math.round(this.cssWidth * dpr);
-		t.canvas.height = Math.round(t.tile.height * dpr);
+		const w = Math.round(this.cssWidth * dpr);
+		const h = Math.round(t.tile.height * dpr);
+		// Gleiche Größe: nur leeren statt den Speicher neu anzulegen.
+		if (t.canvas.width !== w || t.canvas.height !== h) {
+			t.canvas.width = w;
+			t.canvas.height = h;
+		} else if (t.ctx) {
+			t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+			t.ctx.clearRect(0, 0, w, h);
+		}
 		if (t.ctx) this.paint(t, null, this.live ?? undefined);
 	}
 
@@ -368,30 +514,41 @@ export class Surface {
 	 * Malt eine Kachel neu – ganz (`region` = null, Canvas frisch geleert) oder nur einen Ausschnitt
 	 * (Doc-Einheiten). Reihenfolge: Textmarker, Live-Textmarker, Stift, Live-Stift – Markierungen liegen
 	 * damit auch während des Zeichnens unter der Schrift.
+	 *
+	 * Der Ausschnitt wird auf ganze Geräte-Pixel erweitert: Clip und Löschen decken Pixel dann ganz oder gar
+	 * nicht ab (keine halb gelöschten Kantenpixel), und darin werden alle Striche gemalt, deren Bounds ihn
+	 * berühren – dieselben Pfade in derselben Reihenfolge wie beim Neumalen der ganzen Kachel.
 	 */
-	private paint({ tile, ctx }: TileState, region: Bounds | null, live?: LiveStroke) {
+	private paint({ tile, ctx, canvas }: TileState, region: Bounds | null, live?: LiveStroke) {
 		if (!ctx) return;
 		const { dpr, scale } = this;
-		ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, -tile.top * dpr);
+		const k = dpr * scale;
+		const offY = tile.top * dpr;
 		let top = tile.top / scale;
 		let bottom = (tile.top + tile.height) / scale;
+		let left = -Infinity;
+		let right = Infinity;
 		if (region) {
+			const x0 = Math.max(0, Math.floor(region.minX * k));
+			const x1 = Math.min(canvas.width, Math.ceil(region.maxX * k));
+			const y0 = Math.max(0, Math.floor(region.minY * k - offY));
+			const y1 = Math.min(canvas.height, Math.ceil(region.maxY * k - offY));
+			if (!(x1 > x0 && y1 > y0)) return;
 			ctx.save();
-			const w = region.maxX - region.minX;
-			const h = region.maxY - region.minY;
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
 			ctx.beginPath();
-			ctx.rect(region.minX, region.minY, w, h);
+			ctx.rect(x0, y0, x1 - x0, y1 - y0);
 			ctx.clip();
-			ctx.clearRect(region.minX, region.minY, w, h);
-			top = Math.max(top, region.minY);
-			bottom = Math.min(bottom, region.maxY);
+			ctx.clearRect(x0, y0, x1 - x0, y1 - y0);
+			// Abfrage über den erweiterten Ausschnitt (Doc-Einheiten)
+			left = x0 / k;
+			right = x1 / k;
+			top = Math.max(top, (y0 + offY) / k);
+			bottom = Math.min(bottom, (y1 + offY) / k);
 		}
-		const inRegion = this.doc.strokes.filter((s) => {
-			if (this.hidden.has(s.id) || s.tool === "tape") return false;
-			const b = strokeBounds(s);
-			if (b.maxY < top || b.minY > bottom) return false;
-			return !region || (b.maxX >= region.minX && b.minX <= region.maxX);
-		});
+		ctx.setTransform(k, 0, 0, k, 0, -offY);
+		this.index.sync(this.doc.strokes);
+		const inRegion = this.index.query(top, bottom, left, right).filter((s) => s.tool !== "tape" && !this.hidden.has(s.id));
 		ctx.globalAlpha = HL_ALPHA;
 		for (const s of inRegion) if (s.tool === "hl") this.fill(ctx, s.color, strokePath(s));
 		if (live?.highlighter) this.fill(ctx, live.color, live.path);
@@ -421,9 +578,12 @@ export class Surface {
 			this.tapeLive.replaceChildren(this.tapeElement(live.tape, live.color, false));
 			return;
 		}
-		const dirty = this.liveBounds ? union(this.liveBounds, live.bounds) : live.bounds;
+		// Nur das geänderte Ende neu malen – sofern der bisherige Live-Strich noch auf den Kacheln steht.
+		const partial = this.live !== null && live.dirty !== undefined;
+		const dirty = partial ? live.dirty! : this.liveBounds ? union(this.liveBounds, live.bounds) : live.bounds;
 		this.liveBounds = live.bounds;
 		this.live = live;
+		if (dirty.maxX < dirty.minX) return; // Umriss unverändert
 		this.paintLive(pad(dirty), live);
 	}
 
@@ -438,11 +598,36 @@ export class Surface {
 	}
 
 	private paintLive(region: Bounds, live?: LiveStroke) {
-		for (const i of tilesForBounds(region, this.scale, this.tiles.map((t) => t.tile))) {
-			const t = this.tiles[i];
-			if (t?.visible && t.canvas.width) this.paint(t, region, live);
+		const top = region.minY * this.scale;
+		const bottom = region.maxY * this.scale;
+		for (const t of this.tiles) {
+			if (t.visible && t.canvas.width && bottom >= t.tile.top && top <= t.tile.top + t.tile.height) this.paint(t, region, live);
 		}
 	}
+}
+
+/**
+ * Sich überlappende Bereiche zusammenfassen – sonst würden Striche im Überlapp zweimal gemalt (z. B. Strich
+ * und Rest des Live-Strichs beim Absetzen, die fast deckungsgleich sind).
+ */
+function mergeOverlapping(list: Bounds[]): Bounds[] {
+	const out: Bounds[] = [];
+	for (let b of list) {
+		for (let i = 0; i < out.length; ) {
+			const o = out[i];
+			if (o.maxX >= b.minX && o.minX <= b.maxX && o.maxY >= b.minY && o.minY <= b.maxY) {
+				b = union(o, b);
+				out.splice(i, 1);
+				i = 0; // vergrößert: wieder von vorn prüfen
+			} else i++;
+		}
+		out.push(b);
+	}
+	return out;
+}
+
+function geometryKey(doc: InkData): string {
+	return `${doc.space}|${doc.w}|${doc.bg?.kind ?? ""}|${doc.bg?.page ?? ""}`;
 }
 
 function union(a: Bounds, b: Bounds): Bounds {
