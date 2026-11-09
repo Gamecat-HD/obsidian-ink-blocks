@@ -171,19 +171,28 @@ export class Surface {
 		this.applyPattern();
 	}
 
+	/**
+	 * Lage der Fläche auf dem Bildschirm (ein Layout-Zugriff). Ein Pointer-Event samt seiner gebündelten
+	 * (coalesced) Events rechnet mit einer Messung, statt pro Punkt neu zu messen (siehe `toDocAt`).
+	 */
+	measure(): ScreenRect {
+		const r = this.el.getBoundingClientRect();
+		return { left: r.left, top: r.top, x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop };
+	}
+
 	/** Lage der Innenkante auf dem Bildschirm (Clientkoordinaten) – ändert sie sich, ist die Fläche verrutscht. */
 	screenOrigin(): { x: number; y: number } {
-		const r = this.el.getBoundingClientRect();
-		return { x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop };
+		return this.measure();
 	}
 
 	/** Clientkoordinaten → Doc-Einheiten (relativ zur Innenkante, ohne Rahmen). */
 	toDoc(clientX: number, clientY: number): { x: number; y: number } {
-		const r = this.el.getBoundingClientRect();
-		return {
-			x: (clientX - r.left - this.el.clientLeft) / this.scale,
-			y: (clientY - r.top - this.el.clientTop) / this.scale,
-		};
+		return this.toDocAt(this.measure(), clientX, clientY);
+	}
+
+	/** Wie `toDoc`, mit einer vorhandenen Messung. */
+	toDocAt(o: ScreenRect, clientX: number, clientY: number): { x: number; y: number } {
+		return { x: (clientX - o.x) / this.scale, y: (clientY - o.y) / this.scale };
 	}
 
 	/** Hinweis über der Fläche (z. B. fehlender Hintergrund); `null` entfernt ihn. */

@@ -3,9 +3,9 @@ import type { InkColor, Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, replaceOp, strokeBounds, type Bounds, type InkOp } from "../model/ops";
 import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
-import { outlinePath, TAPE_SIZES } from "../render/strokes";
+import { outlineChange, outlineToPath, strokeOutline, TAPE_SIZES } from "../render/strokes";
 import { tapeHit, tapeSvg } from "../render/tape";
-import type { Surface } from "../render/Surface";
+import type { ScreenRect, Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
 import { shortId } from "../util/ids";
 import { ERASER_SIZES } from "../settingsData";
@@ -29,6 +29,8 @@ const HOLD_MS = 500;
 const HOLD_SLOP_PX = 4;
 /** Verschiebt sich die Fläche auf dem Bildschirm um mehr als so viele CSS-px, ist sie unter dem Stift verrutscht. */
 const SHIFT_PX = 1;
+/** Leerer Bereich: Live-Strich unverändert, nichts neu zu malen. */
+const EMPTY: Bounds = { minX: 0, minY: 0, maxX: -1, maxY: -1 };
 
 /** Lage der Fläche auf dem Bildschirm beim letzten verarbeiteten Punkt (siehe `surfaceShifted`). */
 interface ScreenOrigin {
@@ -57,6 +59,8 @@ type Gesture =
 			hStart: number;
 			/** ID des entstehenden Strichs (wird zur ID des fertigen Strichs, api.onLiveStroke). */
 			liveId: string;
+			/** Zuletzt gemalter Live-Umriss – der nächste Frame malt nur neu, was sich daran geändert hat. */
+			outline: number[][] | null;
 	  })
 	| (ScreenOrigin & {
 			kind: "erase";
@@ -263,6 +267,7 @@ export class PointerPipeline {
 			points: [x, y, simulated ? 0.5 : pressure],
 			hStart: this.entry.doc.h,
 			liveId: shortId(6),
+			outline: null,
 		};
 		this.armHold(x, y);
 		this.renderLive();
@@ -294,8 +299,7 @@ export class PointerPipeline {
 	}
 
 	/** Hat sich die Fläche seit dem letzten Punkt auf dem Bildschirm verschoben? Merkt sich die neue Lage. */
-	private surfaceShifted(g: ScreenOrigin): boolean {
-		const o = this.surface.screenOrigin();
+	private surfaceShifted(g: ScreenOrigin, o: ScreenRect): boolean {
 		const shifted = Math.abs(o.x - g.ox) > SHIFT_PX || Math.abs(o.y - g.oy) > SHIFT_PX;
 		g.ox = o.x;
 		g.oy = o.y;
@@ -320,20 +324,22 @@ export class PointerPipeline {
 	}
 
 	private readonly onMove = (e: PointerEvent) => {
+		// Eine Messung der Fläche für das ganze Event (inkl. gebündelter Punkte); nach dem Wachsen neu messen.
+		let o: ScreenRect | null = this.surface.measure();
 		// Stift-/Mausposition für Zusammenarbeit (api.onPointer), auch beim Schweben ohne Kontakt
 		if (e.pointerType !== "touch" || this.gesture) {
-			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			const { x, y } = this.surface.toDocAt(o, e.clientX, e.clientY);
 			this.plugin.api.emitPointer(this.entry.path, { x, y, kind: e.pointerType === "pen" ? "pen" : e.pointerType === "touch" ? "touch" : "mouse", down: this.gesture?.kind === "draw" });
 		}
 		if (e.pointerType === "touch" && this.touchMove(e)) return;
 		const g = this.gesture;
 		if (!g) {
-			this.hover(e);
+			this.hover(e, o);
 			return;
 		}
 		if (g.pointerId !== e.pointerId) return;
 		e.preventDefault();
-		if (g.kind === "erase") this.showEraser(e);
+		if (g.kind === "erase") this.showEraser(e, o);
 
 		if (g.kind === "scroll") {
 			if (g.scroller) g.scroller.scrollTop -= e.clientY - g.lastY;
@@ -348,7 +354,7 @@ export class PointerPipeline {
 		}
 
 		if (g.kind === "lasso") {
-			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			const { x, y } = this.surface.toDocAt(o, e.clientX, e.clientY);
 			const n = g.poly.length;
 			if (Math.hypot(x - g.poly[n - 2], y - g.poly[n - 1]) * this.surface.docScale < LASSO_STEP_PX) return;
 			g.poly.push(x, y);
@@ -357,20 +363,20 @@ export class PointerPipeline {
 			return;
 		}
 		if (g.kind === "move") {
-			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			const { x, y } = this.surface.toDocAt(o, e.clientX, e.clientY);
 			this.selection.moveTo(x - g.x0, y - g.y0);
 			return;
 		}
 		if (g.kind === "scale") {
-			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
+			const { x, y } = this.surface.toDocAt(o, e.clientX, e.clientY);
 			this.selection.scaleTo(Math.hypot(x - g.ox, y - g.oy) / g.d0);
 			return;
 		}
 
 		if (g.kind === "draw" && g.shape) return;
 		if (g.kind === "draw" && g.straight) {
-			const { x, y } = this.surface.toDoc(e.clientX, e.clientY);
-			if (this.surfaceShifted(g)) return this.restartDraw(g, e.pointerType, x, y, e.pressure);
+			const { x, y } = this.surface.toDocAt(o, e.clientX, e.clientY);
+			if (this.surfaceShifted(g, o)) return this.restartDraw(g, e.pointerType, x, y, e.pressure);
 			g.points = straightLine(g.x0, g.y0, x, y);
 			this.maybeGrow(y);
 			this.renderLive();
@@ -380,21 +386,24 @@ export class PointerPipeline {
 		const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
 		let g2: Extract<Gesture, { kind: "draw" | "erase" }> = g;
 		for (const ev of events.length ? events : [e]) {
-			const { x, y } = this.surface.toDoc(ev.clientX, ev.clientY);
+			o ??= this.surface.measure();
+			const { x, y } = this.surface.toDocAt(o, ev.clientX, ev.clientY);
 			// Fläche unter dem Stift verrutscht (sie ist gewachsen und der Dialog hat sich neu zentriert, die Notiz
 			// hat gescrollt …): den Sprung nicht als lange Linie verbinden.
-			const shifted = this.surfaceShifted(g2);
+			const shifted = this.surfaceShifted(g2, o);
 			if (g2.kind === "erase") {
 				if (!shifted) this.eraseSegment(g2.x, g2.y, x, y);
 				g2.x = x;
 				g2.y = y;
 			} else if (shifted) {
 				g2 = this.restartDraw(g2, e.pointerType, x, y, ev.pressure);
+				o = null;
 			} else {
 				const n = g2.points.length;
 				if (Math.hypot(x - g2.points[n - 3], y - g2.points[n - 2]) < MIN_STEP) continue;
 				g2.points.push(x, y, g2.simulated ? 0.5 : ev.pressure);
-				this.maybeGrow(y);
+				// Gewachsen: Layout ändert sich, die Fläche kann verrutschen → vor dem nächsten Punkt neu messen
+				if (this.maybeGrow(y)) o = null;
 			}
 		}
 		if (g2.kind !== "draw") return;
@@ -508,11 +517,12 @@ export class PointerPipeline {
 		else if (action === "redo") this.gestures.redo();
 	}
 
-	private maybeGrow(y: number) {
+	private maybeGrow(y: number): boolean {
 		const doc = this.entry.doc;
-		if (doc.space !== "nb" || y < doc.h - GROW_MARGIN) return;
+		if (doc.space !== "nb" || y < doc.h - GROW_MARGIN) return false;
 		doc.h += GROW_STEP;
 		this.surface.resize();
+		return true;
 	}
 
 	/** Während eines Strichs blendet die Werkzeugleiste aus (CSS `.is-drawing`). */
@@ -565,16 +575,32 @@ export class PointerPipeline {
 		this.renderLive();
 	};
 
+	/**
+	 * Live-Strich malen. Pro Bewegung ändert sich nur das Ende des Umrisses: Der Pfad entsteht direkt aus den
+	 * Umrisspunkten (ohne SVG-String) und neu gemalt wird nur der geänderte Bereich (`outlineChange`).
+	 */
 	private renderLive() {
 		const g = this.gesture;
 		if (g?.kind !== "draw") return;
 		const tape = g.tool === "tape";
+		const path = new Path2D();
+		let dirty: Bounds | undefined;
+		if (!tape) {
+			const outline = strokeOutline(g.points, g, false);
+			outlineToPath(outline, path);
+			const change = g.outline ? outlineChange(g.outline, outline) : null;
+			// Gleicher Umriss (z. B. Punkt zu nah am vorigen): nichts neu zu malen.
+			if (change === "same") dirty = EMPTY;
+			else if (change) dirty = { minX: change.minX - 1, minY: change.minY - 1, maxX: change.maxX + 1, maxY: change.maxY + 1 };
+			g.outline = outline;
+		}
 		this.surface.drawLive({
-			path: tape ? new Path2D() : outlinePath(g.points, g, false),
+			path,
 			bounds: pointsBounds(g.points, g.size),
 			color: g.color,
 			highlighter: g.tool === "hl",
 			tape: tape ? tapeSvg(g.points, g.size) : undefined,
+			dirty,
 		});
 		this.plugin.api.emitLive(this.entry.path, { id: g.liveId, tool: g.tool, color: g.color, size: g.size, points: g.points, simulated: g.simulated });
 	}
@@ -634,18 +660,17 @@ export class PointerPipeline {
 	private eraserEl: HTMLElement | null = null;
 
 	/** Ohne Geste: Kreis zeigen, solange der Radierer gewählt ist und Stift/Maus über der Fläche schweben. */
-	private hover(e: PointerEvent) {
+	private hover(e: PointerEvent, o: ScreenRect) {
 		if (e.pointerType === "touch" || this.plugin.settings.tools.tool !== "eraser") return this.hideEraser();
-		this.showEraser(e);
+		this.showEraser(e, o);
 	}
 
-	private showEraser(e: PointerEvent) {
+	private showEraser(e: PointerEvent, r: ScreenRect = this.surface.measure()) {
 		const radius = ERASER_SIZES[this.plugin.settings.tools.eraserWidth] * this.surface.docScale;
 		if (!this.eraserEl) {
 			this.eraserEl = this.surface.el.createDiv({ cls: "ink-eraser-cursor" });
 			this.surface.el.addEventListener("pointerleave", this.onLeave);
 		}
-		const r = this.surface.el.getBoundingClientRect();
 		const el = this.eraserEl;
 		el.style.width = el.style.height = `${radius * 2}px`;
 		el.style.transform = `translate(${e.clientX - r.left - radius}px, ${e.clientY - r.top - radius}px)`;
