@@ -3,7 +3,8 @@ import type { InkColor, Stroke, Tool } from "../model/ink-format";
 import { applyOp, opBounds, pointsBounds, replaceOp, strokeBounds, type Bounds, type InkOp } from "../model/ops";
 import { GROW_MARGIN, GROW_STEP, lassoSelect } from "../model/selection";
 import { recognizeShape, straightLine } from "../model/shapes";
-import { outlineChange, outlineToPath, strokeOutline, TAPE_SIZES } from "../render/strokes";
+import { LiveOutline } from "../render/liveOutline";
+import { outlineChange, outlineToPath, strokeOptions, TAPE_SIZES } from "../render/strokes";
 import { tapeHit, tapeSvg } from "../render/tape";
 import type { ScreenRect, Surface } from "../render/Surface";
 import type { InkEntry } from "../store/InkStore";
@@ -61,6 +62,8 @@ type Gesture =
 			liveId: string;
 			/** Zuletzt gemalter Live-Umriss – der nächste Frame malt nur neu, was sich daran geändert hat. */
 			outline: number[][] | null;
+			/** Rechnet den Umriss pro Bewegung nur für die neuen Punkte (exakt wie getStroke). */
+			outliner: LiveOutline;
 	  })
 	| (ScreenOrigin & {
 			kind: "erase";
@@ -268,6 +271,7 @@ export class PointerPipeline {
 			hStart: this.entry.doc.h,
 			liveId: shortId(6),
 			outline: null,
+			outliner: new LiveOutline(),
 		};
 		this.armHold(x, y);
 		this.renderLive();
@@ -586,7 +590,7 @@ export class PointerPipeline {
 		const path = new Path2D();
 		let dirty: Bounds | undefined;
 		if (!tape) {
-			const outline = strokeOutline(g.points, g, false);
+			const outline = g.outliner.update(g.points, strokeOptions(g, false));
 			outlineToPath(outline, path);
 			const change = g.outline ? outlineChange(g.outline, outline) : null;
 			// Gleicher Umriss (z. B. Punkt zu nah am vorigen): nichts neu zu malen.

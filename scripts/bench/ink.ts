@@ -5,7 +5,8 @@
 import type { Stroke } from "../../src/model/ink-format";
 import { strokeBounds } from "../../src/model/ops";
 import { StrokeIndex } from "../../src/render/strokeIndex";
-import { outlineChange, outlineSvg, outlineToPath, strokeOutline, type PathSink } from "../../src/render/strokes";
+import { LiveOutline } from "../../src/render/liveOutline";
+import { outlineChange, outlineSvg, outlineToPath, strokeOptions, strokeOutline, type PathSink } from "../../src/render/strokes";
 
 function rng(seed: number) {
 	return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
@@ -36,16 +37,26 @@ const sink: PathSink & { n: number } = {
 
 const style = { tool: "pen" as const, size: 3 };
 
-/** Kosten pro Bewegung (µs) bei Strichlänge ≈ n, gemittelt über die letzten 50 Bewegungen. */
+/**
+ * Kosten pro Bewegung (µs) bei Strichlänge ≈ n, gemittelt über die letzten 50 Bewegungen:
+ * alt = ganzer Umriss + SVG-String; neu = ganzer Umriss + Pfad + geänderter Bereich;
+ * inkrementell = LiveOutline (nur neue Punkte) + Pfad + geänderter Bereich (wie jetzt in der PointerPipeline).
+ */
 function liveCost(n: number) {
 	const pts = hand(n);
 	const reps = 20;
 	let oldT = 0;
 	let newT = 0;
+	let incT = 0;
 	let area = 0;
 	let full = 0;
+	const opts = strokeOptions(style, false);
 	for (let r = 0; r < reps; r++) {
 		let prev = strokeOutline(pts.slice(0, (n - 51) * 3), style, false);
+		// wie in der Pipeline: ein Array, das wächst
+		const growing = pts.slice(0, (n - 51) * 3);
+		const live = new LiveOutline();
+		let prevInc = live.update(growing, opts);
 		for (let k = n - 50; k <= n; k++) {
 			const p = pts.slice(0, k * 3);
 			let t0 = performance.now();
@@ -56,6 +67,13 @@ function liveCost(n: number) {
 			outlineToPath(o, sink);
 			const ch = outlineChange(prev, o);
 			newT += performance.now() - t0;
+			growing.push(pts[(k - 1) * 3], pts[(k - 1) * 3 + 1], pts[(k - 1) * 3 + 2]);
+			t0 = performance.now();
+			const oi = live.update(growing, opts);
+			outlineToPath(oi, sink);
+			outlineChange(prevInc, oi);
+			incT += performance.now() - t0;
+			prevInc = oi;
 			prev = o;
 			if (r === 0 && ch && ch !== "same") {
 				const b = strokeBounds({ id: "", tool: "pen", color: 0, size: 3, points: p });
@@ -65,7 +83,12 @@ function liveCost(n: number) {
 		}
 	}
 	const per = reps * 51;
-	return { oldUs: +((oldT / per) * 1000).toFixed(1), newUs: +((newT / per) * 1000).toFixed(1), dirtyAreaShare: +(area / full).toFixed(4) };
+	return {
+		oldUs: +((oldT / per) * 1000).toFixed(1),
+		newUs: +((newT / per) * 1000).toFixed(1),
+		incrementalUs: +((incT / per) * 1000).toFixed(1),
+		dirtyAreaShare: +(area / full).toFixed(4),
+	};
 }
 
 function strokes(count: number, height: number): Stroke[] {
