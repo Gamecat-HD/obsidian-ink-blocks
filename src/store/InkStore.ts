@@ -3,6 +3,7 @@ import type InkBlocksPlugin from "../main";
 import { History } from "../model/history";
 import { decodeInk, encodeInk, type InkData } from "../model/ink-format";
 import { mergeInk } from "../model/merge";
+import { reuseStrokes } from "../model/reuse";
 import { formatBgLink, linkMatchesPath, parseBgLink } from "../block/bgLink";
 import { findInkFences, replaceFenceBody } from "../block/locate";
 import { parseBlock, setField } from "../block/source";
@@ -29,7 +30,10 @@ export interface InkEntry {
 interface Entry extends InkEntry {
 	refs: number;
 	listeners: Set<InkListener>;
-	/** Stand der Datei, wie er zuletzt gelesen oder geschrieben wurde – Basis für den Merge. */
+	/**
+	 * Stand der Datei, wie er zuletzt gelesen oder geschrieben wurde – Basis für den Merge. Es zählen nur die
+	 * Strich-IDs (siehe mergeInk), daher genügt eine flache Kopie statt die Datei erneut zu dekodieren.
+	 */
 	base: InkData;
 	lastWritten: string;
 	save: Debouncer<[], Promise<void>>;
@@ -160,7 +164,7 @@ export class InkStore {
 			revealed: new Set(),
 			refs: 0,
 			listeners: new Set(),
-			base: decodeInk(text),
+			base: snapshot(doc),
 			lastWritten: text,
 			save: debounce(() => this.serial(entry, () => this.write(entry)), SAVE_DELAY, true),
 			queue: Promise.resolve(),
@@ -204,7 +208,7 @@ export class InkStore {
 		await this.plugin.app.vault.process(file, (data) => {
 			if (data !== entry.lastWritten) {
 				try {
-					const remote = decodeInk(data);
+					const remote = reuseStrokes(entry.doc.strokes, decodeInk(data));
 					const after = new Set(remote.strokes.map((s) => s.id));
 					historyInvalid = entry.base.strokes.some((s) => !after.has(s.id));
 					entry.doc = mergeInk(entry.base, entry.doc, remote);
@@ -216,7 +220,7 @@ export class InkStore {
 			entry.dirty = false;
 			const text = encodeInk(entry.doc);
 			entry.lastWritten = text;
-			entry.base = decodeInk(text);
+			entry.base = snapshot(entry.doc);
 			return text;
 		});
 		if (merged) {
@@ -242,7 +246,8 @@ export class InkStore {
 		if (text === entry.lastWritten) return; // eigener Schreibvorgang
 		let remote: InkData;
 		try {
-			remote = decodeInk(text);
+			// Unveränderte Striche behalten ihr Objekt (Pfad-Cache, Kacheln malen nur Neues neu)
+			remote = reuseStrokes(entry.doc.strokes, decodeInk(text));
 		} catch (e) {
 			console.warn(`[ink-blocks] ${file.path}: externe Änderung nicht lesbar, wird ignoriert`, e);
 			return;
@@ -256,7 +261,7 @@ export class InkStore {
 		// die Striche schon während der Bewegung entfernt) → zusammenführen statt ersetzen.
 		const local = entry.dirty || [...this.plugin.editors].some((e) => e.entry === entry && e.busy);
 		entry.doc = local ? mergeInk(entry.base, entry.doc, remote) : remote;
-		entry.base = remote;
+		entry.base = snapshot(remote);
 		if (!onlyAdded) entry.history.clear();
 		entry.lastWritten = text;
 		this.emit(entry, "reloaded");
@@ -324,4 +329,9 @@ export class InkStore {
 			await vault.process(note, (data) => rewrite(data, note.path));
 		}
 	}
+}
+
+/** Flache Kopie als Merge-Basis: eigenes Strich-Array, gleiche (unveränderliche) Strich-Objekte. */
+function snapshot(doc: InkData): InkData {
+	return { ...doc, strokes: doc.strokes.slice() };
 }
