@@ -200,13 +200,19 @@ export class InkApi {
 	private prune(file: string): boolean {
 		const byKey = this.ghosts.get(file);
 		if (!byKey) return false;
+		// Nur beendete Geister können verschwinden – solange keiner beendet ist (der Normalfall während des
+		// Zeichnens, bei jeder Nachricht), muss das Dokument nicht durchsucht werden.
+		let ended = false;
+		for (const g of byKey.values()) if (g.endedAt !== null) ended = true;
+		if (!ended) return false;
 		const doc = this.plugin.store.peek(file);
 		const ids = doc ? new Set(doc.strokes.map((s) => s.id)) : new Set<string>();
 		let changed = false;
 		for (const [key, g] of byKey) {
+			if (g.endedAt === null) continue;
 			const arrived = ids.has(g.stroke.id);
-			const expired = g.endedAt !== null && Date.now() - g.endedAt > GHOST_TTL;
-			if ((g.endedAt !== null && arrived) || expired) {
+			const expired = Date.now() - g.endedAt > GHOST_TTL;
+			if (arrived || expired) {
 				byKey.delete(key);
 				changed = true;
 			}

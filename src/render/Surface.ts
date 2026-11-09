@@ -236,7 +236,7 @@ export class Surface {
 			g.dataset.key = key;
 			g.dataset.stroke = stroke.id;
 			g.classList.add("ink-remote-stroke");
-			const d = outlineSvg(p, stroke, false);
+			const d = this.remoteOutline(key, stroke);
 			if (d) {
 				const path = g.appendChild(document.createElementNS(SVG_NS, "path"));
 				path.setAttribute("d", d);
@@ -291,6 +291,25 @@ export class Surface {
 		}
 		this.remoteGroup.replaceChildren(...nodes);
 		this.el.dataset.pointers = String(this.remotePointers.length);
+		// Umrisse nicht mehr gezeigter Geister vergessen
+		if (this.outlineCache.size > this.remoteGhosts.length) {
+			const keys = new Set(this.remoteGhosts.map((g) => g.key));
+			for (const k of this.outlineCache.keys()) if (!keys.has(k)) this.outlineCache.delete(k);
+		}
+	}
+
+	/**
+	 * Umriss eines fremden Strichs – gemerkt, solange er sich nicht ändert: Neu gezeichnet wird bei jeder
+	 * Nachricht (auch nur Zeigerbewegungen anderer), neu berechnet nur der Strich, der gewachsen ist.
+	 */
+	private remoteOutline(key: string, s: ApiLiveStroke): string {
+		const p = s.points;
+		const sig = `${s.id}|${s.tool}|${s.size}|${s.simulated ? 1 : 0}|${p.length}|${p[p.length - 3]}|${p[p.length - 2]}|${p[p.length - 1]}`;
+		const hit = this.outlineCache.get(key);
+		if (hit?.sig === sig) return hit.d;
+		const d = outlineSvg(p, s, false);
+		this.outlineCache.set(key, { sig, d });
+		return d;
 	}
 
 	/** Band-Ebene neu aufbauen (wenige Elemente – billiger als Buchführung über Änderungen). */
