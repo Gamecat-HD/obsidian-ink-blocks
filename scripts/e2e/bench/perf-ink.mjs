@@ -128,9 +128,8 @@ export default async (h) => {
 			setStrokes(strokes, H);
 			await settle();
 			const r = {};
-			// kalt: neue Strich-Objekte (wie nach dem Laden)
-			setStrokes(strokes.map((s) => ({ ...s, points: s.points.slice() })), H);
-			await settle();
+			// kalt: neue Strich-Objekte (wie nach dem Laden) – Pfade müssen neu berechnet werden
+			entry.doc.strokes = strokes.map((s) => ({ ...s, points: s.points.slice() }));
 			let t0 = performance.now();
 			surface.redrawAll();
 			flush();
