@@ -462,7 +462,8 @@ export class Surface {
 
 	/**
 	 * Bereiche (Doc-Einheiten) auf allen sichtbaren Kacheln neu malen – jeweils nur den Ausschnitt, nicht die
-	 * ganze Kachel. Das Ergebnis ist pixelgleich mit dem Neumalen der ganzen Kachel (siehe `paint`).
+	 * ganze Kachel. Ergebnis wie beim Neumalen der ganzen Kachel, bis auf Antialiasing-Rauschen an einzelnen
+	 * Kantenpixeln (Skia rastert innerhalb eines Clips minimal anders, siehe E2E m30-render-regions).
 	 */
 	private repaint(bounds: Bounds[]) {
 		if (!bounds.length) return;
