@@ -12,6 +12,7 @@ export class OcrWorker {
 	private readonly url: string;
 	private seq = 0;
 	private readonly pending = new Map<number, Pending>();
+	private recognizing: Promise<unknown> = Promise.resolve();
 
 	constructor() {
 		this.url = URL.createObjectURL(new Blob([workerCode], { type: "text/javascript" }));
@@ -46,8 +47,11 @@ export class OcrWorker {
 		await this.call<"decoder">({ type: "decoder", setup });
 	}
 
-	async recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
-		return ((await this.call<"recognize">({ type: "recognize", segments })) ?? []) as RecognizedSegment[];
+	/** Der Worker erkennt nacheinander – Texterkennung und Wortvorschläge dürfen sich nicht überlappen. */
+	recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]> {
+		const run = this.recognizing.then(() => this.call<"recognize">({ type: "recognize", segments })).then((r) => (r ?? []) as RecognizedSegment[]);
+		this.recognizing = run.catch(() => undefined);
+		return run;
 	}
 
 	/** Proben einmal durch die Modelle, dann jede Parameterkombination decodieren und auszählen. */

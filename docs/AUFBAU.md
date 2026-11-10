@@ -325,3 +325,35 @@ Grundlage ist die Recherche [recherche/OCR-OPTIONEN-2026-10.md](recherche/OCR-OP
 
 - Beobachtet auf dem Tablet: Beim Schreiben sprang die Notiz manchmal ganz nach oben, zeitgleich mit dem Eintragen des erkannten Textes (`text:`) in einen Block. Wer nur mit dem Stift arbeitet, lässt die Schreibmarke von CodeMirror am Notizanfang stehen; eine Änderung über `editor.replaceRange` holte sie offenbar ins Bild.
 - `BlockWriter.replaceQuietly`: Änderungen an offenen Notizen (Felder, Text unter dem Block) gehen direkt an CodeMirror (`editor.cm.dispatch`, ohne `scrollIntoView`, Undo bleibt). `holdView` merkt sich davor die Lage der aktiven bzw. ersten sichtbaren Schreibfläche und schiebt die Ansicht nach dem Neuzeichnen (2 Frames, nochmals nach 300 ms) zurück, falls sie verrutscht ist – außer der Nutzer scrollt inzwischen selbst.
+
+### Nach v0.7.0 (M32): Wortvorschläge beim Schreiben (Stufe 1)
+
+- Einstellung „Wortvorschläge beim Schreiben“, Standard aus; der Funken-Knopf in der Schreibleiste und ein Befehl schalten sie jederzeit um. `SuggestService` erkennt direkt nach dem Absetzen nur das letzte Wort (`layout.writingFront`, Wortlücke ab einer Zeilenhöhe, gemessen an den Schriftproben, höchstens 10 Zeilenhöhen), mit `fast` nur über das Hauptmodell. Es läuft höchstens ein Durchlauf, nur der neueste wartet. Angezeigt wird frühestens 250 ms nach dem Absetzen, und nur wenn das unsicherste Zeichen des Wortes mindestens 0,25 Wahrscheinlichkeit hat (0,6 ließ auf dem Tablet die meisten langen Wörter durchfallen).
+- `WordIndex` zählt die Wörter aus demselben Korpus wie das Sprachmodell und ergänzt nur eindeutige Fälle (mindestens 3 Zeichen Anfang, 3 Vorkommen, 30 % Anteil, Wort nicht schon fertig).
+- Der Vorschlag ist eine Vorschau in `Surface.suggestGroup`: nicht im Dokument, nicht synchronisiert. Kurzes Antippen mit Stift oder Maus macht daraus echte Striche (eine `replace`-Op, also ein Schritt Undo). Jede andere Eingabe verwirft ihn. Die linke Kante gilt nicht als Antippen, dort landen Satzzeichen.
+- Die Striche kommen aus dem Einstrich-Font EMS Readability (`suggest/fontData.ts`, erzeugt von `scripts/build-stroke-font.mjs`). Stufe 2 ersetzt ihn durch Buchstaben aus den eigenen Schriftproben.
+- `OcrWorker.recognize` läuft jetzt nacheinander, weil Vorschläge und Texterkennung sich sonst überlappen könnten.
+- Mit `"suggestDebug": true` in der `data.json` des Geräts landen Rechenzeiten, Zähler und der Ablauf (kein Text) in `suggest-stats.json` im Plugin-Ordner.
+- Einstellung „Große Modellfassung im Sparmodus“ (`ocrFastModel`, Standard aus): Der Sparmodus bleibt ohne Zweitmodell, nimmt aber das geladene fp32-v2, das in Wasm schneller rechnet.
+
+### Nach M32 (M33): Wortvorschläge in der eigenen Schrift (Stufe 2)
+
+- `GlyphLibrary` schneidet Buchstaben aus den Proben des Schreibtrainings: Striche, die sich waagerecht überlappen, gelten als ein Buchstabe, die größten Lücken als Wortgrenzen. Ein Wort zählt nur, wenn die Zahl der Buchstaben stimmt und jede Form grob passt (Ober- und Unterlängen). Größen werden in x-Höhen gespeichert.
+- Je Zeichen kommen die bis zu vier Varianten zum Einsatz, die den anderen Beispielen am ähnlichsten sind. So fallen die seltenen Fehlzuordnungen heraus.
+- Fehlt ein Buchstabe, nimmt `render` den eigenen Grundbuchstaben (Umlaute) oder den Einstrich-Font aus Stufe 1.
+- „Schreibtraining: Buchstaben für Wortvorschläge“: einzeln geschriebene Buchstaben (`source: "letters"`). Sie zählen nicht für die Texterkennung und gehen beim Auswählen vor, weil ihre Zuordnung sicher ist. Das „n“ am Ende jeder Zeile liefert das Maß für die Größe.
+
+### Nach M33 (M34): Mehr Kontext für die Wortvorschläge
+
+- `WordIndex` zählt auch Wortpaare. Passt ein Kandidat zum Wort davor, entscheidet das zuerst und reicht schon ein Anfang aus zwei Buchstaben. Sonst bleibt es bei der Häufigkeit, wobei Wörter der aktiven Notiz und der erkannte Text dieser Schreibfläche fünffach zählen.
+- Das Wort davor wird nicht bei jedem Strich neu erkannt: `SuggestService.memo` merkt sich gelesene Wörter nach dem Hash ihrer Striche. Nur beim ersten Mal wird es mit erkannt, das Bild bleibt danach so schmal wie vorher.
+
+### Nach M34 (M35): Vorschläge von Claude (Stufe 3)
+
+- Einstellung „Vorschläge von Claude“, Standard aus. Findet sich lokal nichts, fragt `SuggestService` den Dienst `scripts/ink-claude.py` (Installation nach `~/.local/bin/ink-claude`), frühestens 600 ms nach dem Absetzen und höchstens alle 1,5 s. Lokale Vorschläge warten nie darauf.
+- Der Dienst hält eine `claude -p`-Sitzung offen (Haiku, geringer Aufwand, per stream-json), das spart den Start bei jeder Anfrage. Nach 15 Anfragen beginnt sie neu, nach 5 Minuten ohne Anfrage endet sie.
+- Claude bekommt keine Werkzeuge, keine MCP-Server und keine Einstellungen, läuft in einem leeren Ordner und sieht nur den Notiztitel, bis zu 600 Zeichen Notizinhalt und die letzten 300 Zeichen Geschriebenes. Der Dienst hört nur auf 127.0.0.1, prüft den `Host` und verlangt einen Schlüssel. Texte werden nicht protokolliert.
+- `parseReply` lässt nur eine Zeile mit höchstens 6 Wörtern und üblichen Zeichen durch. Mit `~` ergänzt die Antwort das aktuelle Wort, sonst beginnt sie ein neues.
+- Tempo: `Continuation` zeigt den Rest eines Claude-Vorschlags sofort, solange man ihn weiterschreibt, ohne neue Anfrage. Der Dienst startet die Sitzung vorab und nach 15 Anfragen gleich neu. `hold` lässt einen Vorschlag beim Weiterschreiben stehen, bis der nächste da ist (höchstens 1,5 s), statt ihn bei jedem Strich zu löschen; ein Neuladen des Dokuments durch Tandem löscht ihn nur, wenn wirklich neue Striche dazugekommen sind.
+- Weitermachen nach dem Annehmen: `continueAfterAccept` zeigt direkt die nächste Fortsetzung, also den Rest von Claude, sonst eine klare Wortfolge aus dem Vault (`WordIndex.phrase`), sonst fragt es Claude ohne Pause. So kann ein Satz durch wiederholtes Antippen entstehen.
+- Umbruch: `layoutGhost` setzt mit `Wrap` Wörter, die rechts nicht passen, an den Zeilenanfang der nächsten Linie (höchstens drei Zeilen). Ist dort schon etwas geschrieben, endet der Vorschlag vorher. Nach dem Annehmen geht es von der letzten Zeile aus weiter.

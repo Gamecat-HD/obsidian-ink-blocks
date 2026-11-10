@@ -98,6 +98,27 @@ export class InkSettingTab extends PluginSettingTab {
 			"ocrEnabled",
 		);
 		this.toggle("Erkannten Text anzeigen", "Zeigt den erkannten Text klein unter der Schreibfläche (Klick klappt ihn auf).", "showText", () => this.plugin.refreshBlocks());
+		this.toggle(
+			"Wortvorschläge beim Schreiben",
+			"Ergänzt nach einer kurzen Pause das angefangene Wort aus deinen Notizen. Antippen übernimmt es, Weiterschreiben verwirft es. Der Knopf mit den Funken in der Schreibleiste schaltet das jederzeit ein und aus. Läuft lokal auf diesem Gerät und braucht die Handschrift-Erkennung.",
+			"suggestEnabled",
+			() => this.plugin.suggest.settingChanged(),
+		);
+		this.toggle(
+			"Vorschläge von Claude",
+			"Findet sich in deinen Notizen nichts, wird Claude Haiku gefragt. Dafür gehen Titel und Anfang der Notiz sowie der zuletzt geschriebene Text an Anthropic, und es zählt auf dein Limit. Braucht den Dienst ink-claude in Termux.",
+			"claudeEnabled",
+			() => this.plugin.suggest.settingChanged(),
+		);
+		new Setting(containerEl)
+			.setName("Schlüssel für ink-claude")
+			.setDesc("Ausgabe von „ink-claude --token“ in Termux.")
+			.addText((t) =>
+				t.setValue(this.plugin.settings.claudeToken).onChange(async (v) => {
+					this.plugin.settings.claudeToken = v.trim();
+					await this.plugin.saveSettings();
+				}),
+			);
 		new Setting(containerEl)
 			.setName("Wartezeit nach dem Schreiben")
 			.setDesc("Sekunden Ruhe nach dem letzten Strich, bevor erkannt wird.")
@@ -120,6 +141,12 @@ export class InkSettingTab extends PluginSettingTab {
 					this.plugin.ocr.reset();
 				}),
 			);
+		this.toggle(
+			"Große Modellfassung im Sparmodus",
+			"Nutzt auch im Sparmodus die große Fassung von de-htr-web-v2, sobald sie geladen ist: etwa 3–4× schneller und gleich genau, braucht aber rund 30 MB mehr Speicher. Das Zweitmodell bleibt aus.",
+			"ocrFastModel",
+			() => this.plugin.ocr.reset(),
+		);
 		new Setting(containerEl)
 			.setName("Erkennungs-Engine")
 			.setDesc("Automatisch: de-htr-web-v2, sonst v1, sonst Tesseract.js – je nachdem, was geladen ist und funktioniert.")
@@ -279,7 +306,7 @@ export class InkSettingTab extends PluginSettingTab {
 	private toggle(
 		name: string,
 		desc: string,
-		key: "mouseDraws" | "barrelErases" | "ocrEnabled" | "ocrLanguageModel" | "showText" | "hlStraight" | "shapeRecognition" | "ocrLearnCorrections",
+		key: "mouseDraws" | "barrelErases" | "ocrEnabled" | "ocrLanguageModel" | "showText" | "hlStraight" | "shapeRecognition" | "ocrLearnCorrections" | "suggestEnabled" | "ocrFastModel" | "claudeEnabled",
 		after?: () => void,
 	) {
 		new Setting(this.containerEl)

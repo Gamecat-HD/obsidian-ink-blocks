@@ -83,6 +83,8 @@ export class Surface {
 	private readonly tapeLive: SVGGElement;
 	/** Fremde, gerade entstehende Striche (Zusammenarbeit, siehe api.ts). */
 	private readonly remoteGroup: SVGGElement;
+	/** Wortvorschlag: nur Vorschau, nicht Teil des Dokuments. */
+	private readonly suggestGroup: SVGGElement;
 	private remoteGhosts: { key: string; stroke: ApiLiveStroke; label: RemoteLabel }[] = [];
 	private readonly outlineCache = new Map<string, { sig: string; d: string }>();
 	private remotePointers: { key: string; pos: PointerPos; label: RemoteLabel }[] = [];
@@ -117,6 +119,8 @@ export class Surface {
 		this.tapeLive = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
 		this.remoteGroup = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
 		this.remoteGroup.classList.add("ink-remote-layer");
+		this.suggestGroup = this.tapeSvg.appendChild(document.createElementNS(SVG_NS, "g"));
+		this.suggestGroup.classList.add("ink-suggestion");
 
 		this.io = new IntersectionObserver((entries) => this.onIntersect(entries), { rootMargin: "600px 0px" });
 		this.ro = new ResizeObserver(() => {
@@ -232,6 +236,18 @@ export class Surface {
 	/** Strich gerade angehoben (Lasso) und daher nicht auf den Kacheln. */
 	isHidden(id: string): boolean {
 		return this.hidden.has(id);
+	}
+
+	/** Wortvorschlag als blasse Striche zeigen; `null` entfernt ihn. */
+	setSuggestion(strokes: Stroke[] | null) {
+		const nodes = (strokes ?? []).map((s) => {
+			const path = document.createElementNS(SVG_NS, "path");
+			path.setAttribute("d", strokeSvg(s));
+			path.setAttribute("fill", this.color(s.color));
+			return path;
+		});
+		this.suggestGroup.replaceChildren(...nodes);
+		this.el.dataset.suggestion = String(nodes.length);
 	}
 
 	/** Fremde, gerade entstehende Striche halbtransparent mit Namensschild zeigen. */

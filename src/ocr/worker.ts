@@ -144,7 +144,7 @@ async function logits(seg: WorkerSegment, cfg: HtrConfig) {
 	const C = main.dims[main.dims.length - 1];
 	const dims = [1, main.T, C];
 	const validSteps = Math.ceil(contentWidth / cfg.output_stride);
-	const other = partner ? await runModel(partner.session, partner.config, images, width) : null;
+	const other = partner && !seg.fast ? await runModel(partner.session, partner.config, images, width) : null;
 	// Gleiche Schrittweite → gleich viele Zeitschritte; sonst lieber nur das Hauptmodell.
 	const mapped = partner && other && other.T === main.T ? remap(other.lp, other.dims[other.dims.length - 1], partner.map, main.T, C) : null;
 	return { main: main.lp, mapped, dims, validSteps, t };
@@ -170,7 +170,7 @@ async function recognize(segments: WorkerSegment[]): Promise<RecognizedSegment[]
 	for (const seg of segments) {
 		const t0 = performance.now();
 		const l = await logits(seg, cfg);
-		const r = decode(l, cfg, partner?.weight ?? 0, beam, !!seg.detail);
+		const r = decode(l, cfg, partner?.weight ?? 0, beam, !!seg.detail && !seg.fast);
 		const out: RecognizedSegment = { text: r.text, confidence: r.confidence, ms: 0 };
 		if (seg.detail) {
 			out.words = words(l.main, l.dims, cfg, r.text, l.validSteps, l.t);

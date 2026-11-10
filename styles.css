@@ -865,6 +865,10 @@
 
 /* ---- Zusammenarbeit: fremde, gerade entstehende Striche (api.setRemoteStroke) ---- */
 
+.ink-suggestion {
+	opacity: 0.38;
+}
+
 .ink-remote-layer text {
 	font-family: var(--font-interface);
 	font-weight: 600;

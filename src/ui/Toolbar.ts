@@ -67,6 +67,7 @@ export class Toolbar {
 	private readonly bgBtn: HTMLElement;
 	private readonly straightBtn: HTMLElement;
 	private readonly tapeBtn: HTMLElement;
+	private readonly suggestBtn: HTMLElement;
 
 	constructor(
 		parent: HTMLElement,
@@ -125,6 +126,8 @@ export class Toolbar {
 		this.bgBtn = this.button(edit, "align-justify", "Hintergrund und Zeilenabstand", () => this.showPatternMenu());
 		this.tapeBtn = this.button(edit, "eye", "Alle Abdeckbänder aufdecken", () => actions.toggleAllTape());
 		this.tapeBtn.addClass("ink-tb-tape-toggle");
+		this.suggestBtn = this.button(edit, "sparkles", "Wortvorschläge", () => plugin.suggest.toggle());
+		this.suggestBtn.addClass("ink-tb-suggest");
 		if (actions.toggleExpand) {
 			const label = actions.expanded ? "Einklappen (Esc)" : "Ausklappen – große Schreibfläche";
 			const btn = this.button(edit, actions.expanded ? "minimize-2" : "maximize-2", label, () => actions.toggleExpand?.());
@@ -204,6 +207,9 @@ export class Toolbar {
 			setTooltip(this.tapeBtn, revealed ? "Alle Abdeckbänder wieder zudecken" : "Alle Abdeckbänder aufdecken");
 		}
 		this.tapeBtn.toggleClass("is-active", revealed);
+		const suggesting = this.plugin.settings.suggestEnabled;
+		this.suggestBtn.toggleClass("is-active", suggesting);
+		setTooltip(this.suggestBtn, suggesting ? "Wortvorschläge ausschalten" : "Wortvorschläge einschalten");
 		this.bgBtn.toggle(pattern !== null);
 		if (pattern) {
 			if (this.bgBtn.dataset.bg !== pattern.style) setIcon(this.bgBtn, BG_ICON[pattern.style].icon);

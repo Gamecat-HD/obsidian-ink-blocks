@@ -10,6 +10,8 @@ export interface WorkerSegment {
 	raster?: RasterOptions;
 	/** Auch Wörter (Position, Konfidenz) und Alternativen liefern – fürs Überprüfen im Schreibtraining. */
 	detail?: boolean;
+	/** So schnell wie möglich: nur das Hauptmodell, keine weiteren Lesarten (Wortvorschläge). */
+	fast?: boolean;
 }
 
 /** Rasterung eines Segments für das Modell. */

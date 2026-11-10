@@ -82,7 +82,8 @@ type Gesture =
 			pieces: Map<string, Stroke>;
 	  })
 	| { kind: "scroll"; pointerId: number; lastY: number; scroller: HTMLElement | null; x0: number; y0: number; t0: number }
-	| { kind: "tap"; pointerId: number; pointerType: string; tapeId: string; x: number; y: number; clientX: number; clientY: number; pressure: number }
+	/** Tippen aufs Abdeckband (`tapeId`) oder auf den Wortvorschlag (`tapeId` = null). */
+	| { kind: "tap"; pointerId: number; pointerType: string; tapeId: string | null; x: number; y: number; clientX: number; clientY: number; pressure: number }
 	| { kind: "lasso"; pointerId: number; poly: number[]; clientX: number; clientY: number; tap: boolean }
 	| { kind: "move"; pointerId: number; x0: number; y0: number; hStart: number }
 	| { kind: "scale"; pointerId: number; ox: number; oy: number; d0: number; hStart: number };
@@ -93,6 +94,12 @@ export interface PipelineGestures {
 	/** Zwei Finger bewegen (nur wo es Zoom gibt, z. B. in der ausgeklappten Ansicht). */
 	pinch?(p: Pinch): void;
 	pinchEnd?(): void;
+	/** Liegt an (x, y) der Wortvorschlag? */
+	suggestionAt(x: number, y: number): boolean;
+	acceptSuggestion(): void;
+	dismissSuggestion(): void;
+	/** Weitergeschrieben: Vorschlag stehen lassen, bis der nächste da ist – sonst flackert er bei jedem Strich. */
+	holdSuggestion(): void;
 }
 
 /** Übersetzt Pointer-Events auf der Fläche in Striche bzw. Radieren. */
@@ -193,6 +200,12 @@ export class PointerPipeline {
 		const erase =
 			tools.tool === "eraser" ||
 			(e.pointerType === "pen" && ((e.buttons & BUTTON_ERASER) !== 0 || (settings.barrelErases && (e.buttons & BUTTON_BARREL) !== 0)));
+		// Der Vorschlag bleibt nur, wenn Stift oder Maus ihn antippen; jede andere Eingabe verwirft ihn.
+		const onSuggestion = e.pointerType !== "touch" && !erase && tools.tool === "pen" && this.gestures.suggestionAt(x, y);
+		if (!onSuggestion) {
+			if (tools.tool === "pen" && !erase) this.gestures.holdSuggestion();
+			else this.gestures.dismissSuggestion();
+		}
 
 		// Auswahl: Griff skaliert, Rahmen verschiebt, daneben tippen wählt ab.
 		const sel = this.selection;
@@ -237,9 +250,10 @@ export class PointerPipeline {
 			return;
 		}
 
-		// Tippen aufs Abdeckband deckt auf bzw. zu; wird daraus ein Strich, wird ganz normal gezeichnet.
-		const tapeId = this.tapeAt(x, y);
-		if (tapeId) {
+		// Tippen aufs Abdeckband deckt auf bzw. zu, Tippen auf den Vorschlag nimmt ihn an; wird daraus ein Strich,
+		// wird ganz normal gezeichnet.
+		const tapeId = onSuggestion ? null : this.tapeAt(x, y);
+		if (tapeId || onSuggestion) {
 			this.gesture = { kind: "tap", pointerId: e.pointerId, pointerType: e.pointerType, tapeId, x, y, clientX: e.clientX, clientY: e.clientY, pressure: e.pressure };
 			return;
 		}
@@ -352,6 +366,7 @@ export class PointerPipeline {
 		}
 		if (g.kind === "tap") {
 			if (Math.hypot(e.clientX - g.clientX, e.clientY - g.clientY) <= TAP_PX) return;
+			if (g.tapeId === null) this.gestures.dismissSuggestion();
 			this.beginDraw(g.pointerId, g.pointerType, g.x, g.y, g.pressure);
 			this.onMove(e);
 			return;
@@ -431,7 +446,8 @@ export class PointerPipeline {
 		this.setDrawing(false);
 
 		if (g.kind === "tap") {
-			this.toggleTape(g.tapeId);
+			if (g.tapeId === null) this.gestures.acceptSuggestion();
+			else this.toggleTape(g.tapeId);
 		} else if (g.kind === "scroll") {
 			// Finger kurz getippt (ohne zu scrollen): Abdeckband auf-/zudecken.
 			if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) <= TAP_PX && performance.now() - g.t0 < 500) {
