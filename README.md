@@ -20,6 +20,8 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 | **Schreibtraining: Erkennung dieser Notiz überprüfen** | Erkannte Wörter einzeln mit ihren Strichen bestätigen oder korrigieren |
 | **Schreibtraining: Unsichere Wörter der letzten Schreibflächen überprüfen** | Dasselbe über die 25 zuletzt geänderten Flächen im Vault |
 | **Schreibtraining: Erkennung auf meine Schrift abstimmen** | Gewichte von Zweitmodell und Sprachmodell auf deine Proben abstimmen |
+| **Schreibtraining: Buchstaben für Wortvorschläge** | Fehlende oder unsichere Buchstaben einzeln schreiben, damit Wortvorschläge in der eigenen Schrift erscheinen (etwa 2–3 Minuten) |
+| **Wortvorschläge ein- oder ausschalten** | Wie der Funken-Knopf in der Werkzeugleiste |
 | **Pen diagnostics** | Stift testen: Druck, Neigung, Radierer, Event-Rate |
 | **iPad-Modus umschalten** | Obsidian auf die Touch-Oberfläche umschalten und zurück (siehe unten) |
 
@@ -54,6 +56,7 @@ Mit dem Stift **direkt in normalen Notizen** schreiben und **Arbeitsblätter** (
 - Im Finger-Modus zählt eine große Kontaktfläche als Handballen und zeichnet nicht. Zwei Finger scrollen, Zwei-/Drei-Finger-Tipp = Rückgängig/Wiederholen.
 - Gilt je Gerät (liegt nicht in `data.json`, wird also nicht synchronisiert).
 - **Sparmodus auf diesem Gerät** (auf Tablets/Handys standardmäßig an): Die Texterkennung nimmt nur v2 in der kleinen int8-Fassung, ohne v1 als Zweitmodell – rund ein Viertel des Speichers.
+- **Große Modellfassung im Sparmodus** (Standard aus): nimmt trotzdem das fp32-Modell, wenn es geladen ist. Auf dem Galaxy Tab S10 FE liest es ein Wort in etwa 0,09 s statt 0,45 s, braucht aber rund 30 MB mehr Speicher.
 - Das Schreibtraining erreicht man dort über das **Hut-Symbol** in der Seitenleiste.
 
 **Schreibtraining** (verbessert die Erkennung deiner eigenen Schrift):
@@ -77,6 +80,12 @@ text: |
 ````
 
 **Installation (manuell):** Nach `npm run build` die Dateien `main.js`, `manifest.json` und `styles.css` nach `<vault>/.obsidian/plugins/obsidian-ink-blocks/` kopieren und das Plugin unter Einstellungen → Community-Plugins aktivieren. Danach unter Einstellungen → Ink Blocks das Erkennungsmodell herunterladen.
+
+**Wortvorschläge beim Schreiben** (Standard aus, Funken-Knopf in der Werkzeugleiste):
+- Nach dem Absetzen des Stifts wird das angefangene Wort gelesen und blass weitergeschrieben – mit Wörtern und Wortfolgen aus den eigenen Notizen, bevorzugt aus der aktuellen Notiz und passend zum Wort davor.
+- Antippen übernimmt den Vorschlag als echte Striche (ein Schritt Rückgängig), danach erscheint gleich die Fortsetzung. Weiterschreiben verwirft ihn. Was rechts nicht passt, rutscht auf die nächste Linie.
+- Die Buchstaben stammen aus den eigenen Schriftproben; fehlende ersetzt eine Einstrich-Schrift, bis sie im Schreibtraining („Buchstaben für Wortvorschläge“) geschrieben wurden.
+- **Vorschläge von Claude** (Standard aus): Findet sich lokal nichts, fragt das Plugin Claude Haiku über den Dienst `scripts/ink-claude.py`, der neben Obsidian läuft (z. B. in Termux) und die Anmeldung von Claude Code nutzt. Etwa 2 s je Vorschlag; schreibt man ihn weiter, kommt der Rest ohne neue Anfrage.
 
 ## Zusammenarbeit (Tandem)
 
@@ -118,5 +127,6 @@ npm run e2e -- scripts/e2e/tests/*.mjs   # E2E in echtem Obsidian (s. u.)
 ## Netzwerk und Datenschutz
 
 - Das Plugin sendet **keine** Notiz- oder Handschriftdaten irgendwohin. Die Texterkennung läuft lokal (onnxruntime-web/Wasm in einem Worker).
+- Ausnahme, nur wenn **„Vorschläge von Claude“** eingeschaltet ist: Dann gehen Titel und Anfang der aktuellen Notiz (bis 600 Zeichen) und der zuletzt geschriebene Text (bis 300 Zeichen) an den lokalen Dienst `ink-claude` und von dort über Claude Code an Anthropic. Der Dienst hört nur auf 127.0.0.1 und verlangt einen Schlüssel; Claude bekommt dabei keine Werkzeuge.
 - **Einmaliger Download, nur auf Knopfdruck** (Einstellungen → Ink Blocks → „Herunterladen“ oder Befehl „Texterkennung: Modelle herunterladen“): Erkennungsmodell `naeyn/de-htr-web-v2` von Hugging Face (ca. 10 MB, Apache-2.0, fester Commit) und `ort-wasm-simd-threaded.wasm` von jsDelivr (ca. 14 MB, onnxruntime-web 1.30.0). Beides wird per SHA-256 geprüft und in `<plugin>/models/` abgelegt. Danach läuft alles offline.
 - Empfohlen, ebenfalls nur auf Knopfdruck: `naeyn/de-htr-web` v1 (Hugging Face, ca. 10 MB). Zusammen mit v2 erkennt es per Ensemble gut 10 % weniger Fehler. Dazu dasselbe v2-Modell ungerechnet als `model-fp32.onnx` (ca. 40 MB), das 3–4× schneller erkennt. Optional: Tesseract.js 7 mit deutschen Sprachdaten (jsDelivr, ca. 5 MB) als letzte Ausweich-Engine.

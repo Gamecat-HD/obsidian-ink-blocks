@@ -11,6 +11,16 @@ export const BASE_WORDS = [
 	"Quiz", "Yacht", "Xylophon", "jung", "Qualität", "Zwerg", "Vogel", "Wasser", "Kaffee", "Himmel",
 ];
 
+const ALPHABET = "abcdefghijklmnopqrstuvwxyzäöüßABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ";
+
+/** Übungszeilen für einzelne Buchstaben: je zwei Buchstaben doppelt, dazu ein „n“ als Maß für die Größe. */
+export function letterPrompts(needsPractice: (ch: string) => boolean): string[] {
+	const letters = Array.from(ALPHABET).filter(needsPractice);
+	const out: string[] = [];
+	for (let i = 0; i < letters.length; i += 2) out.push([letters[i], letters[i], ...(letters[i + 1] ? [letters[i + 1], letters[i + 1]] : []), "n"].join(" "));
+	return out;
+}
+
 const WORD = /^[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß-]{2,15}$/;
 
 /** Wörter aus Vault-Zeilen mit Häufigkeit (nur Buchstaben, 3–16 Zeichen, Bindestrich erlaubt). */

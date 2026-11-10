@@ -178,7 +178,8 @@ export class InkBlockChild extends MarkdownRenderChild {
 			inkPath,
 			notePath: ctx.sourcePath,
 			hint: () => (containerEl.isConnected ? ctx.getSectionInfo(containerEl)?.lineStart : undefined),
-			busy: () => [...this.plugin.editors].some((e) => e.entry === entry && e.busy),
+			// Auch solange ein Vorschlag sichtbar ist: Das Schreiben des Textes baut den Block neu auf und würde ihn löschen.
+			busy: () => [...this.plugin.editors].some((e) => e.entry === entry && e.busy) || this.plugin.suggest.isShowing(entry),
 			beforeWrite: () => {
 				for (const b of this.plugin.blocks) {
 					if (b.entry !== entry) continue;

@@ -8,7 +8,7 @@ import { editDistance } from "../ocr/benchmark";
 import { boxOf, referenceHeight } from "../ocr/segment";
 import { strokePath } from "../render/strokes";
 import type { InkEntry } from "../store/InkStore";
-import { nextPrompt, vaultWords, type PromptSource } from "../training/prompts";
+import { letterPrompts, nextPrompt, vaultWords, type PromptSource } from "../training/prompts";
 import { reviewItems, segmentText, UNSURE_CONF, type ReviewItem } from "../training/review";
 import { sampleStats, weakChars } from "../training/samples";
 import { readLocal, writeLocal } from "../util/local";
@@ -50,17 +50,27 @@ export class DictationModal extends Modal {
 	private feedbackEl!: HTMLElement;
 	private statsEl!: HTMLElement;
 
-	constructor(private readonly plugin: InkBlocksPlugin) {
+	/** Buchstaben-Training: noch offene Übungszeilen; `null` = normales Diktat. */
+	private letterQueue: string[] | null = null;
+
+	/** `letters`: statt Wörtern einzelne Buchstaben, die den Wortvorschlägen noch fehlen. */
+	constructor(
+		private readonly plugin: InkBlocksPlugin,
+		private readonly letters = false,
+	) {
 		super(plugin.app);
 	}
 
 	async onOpen() {
-		const { plugin, contentEl } = this;
+		const { plugin, contentEl, letters } = this;
 		this.modalEl.addClass("ink-training-modal");
-		this.titleEl.setText("Schreibtraining: Diktat");
+		this.titleEl.setText(letters ? "Schreibtraining: Buchstaben" : "Schreibtraining: Diktat");
 		const header = contentEl.createDiv({ cls: "ink-expanded-header" });
 		this.promptEl = contentEl.createDiv({ cls: "ink-training-prompt", text: "Lade Wörter …" });
-		contentEl.createDiv({ cls: "ink-training-hint", text: "Schreib die Wörter so, wie du sonst schreibst – auf die Linien, in einer Zeile." });
+		contentEl.createDiv({
+			cls: "ink-training-hint",
+			text: letters ? "Schreib jeden Buchstaben einzeln mit großem Abstand, alle auf einer Linie." : "Schreib die Wörter so, wie du sonst schreibst – auf die Linien, in einer Zeile.",
+		});
 		const container = contentEl.createDiv({ cls: "ink-block ink-training-surface is-active" });
 		this.editor = new InkEditor(container, {
 			plugin,
@@ -70,6 +80,7 @@ export class DictationModal extends Modal {
 			background: null,
 			commit: () => this.armAuto(),
 			activate: () => this.editor?.surface.el.focus({ preventScroll: true }),
+			noSuggestions: true,
 		});
 		header.appendChild(this.editor.toolbar.el);
 
@@ -94,6 +105,18 @@ export class DictationModal extends Modal {
 		this.scope.register([], "Enter", () => (void this.next(), false));
 		this.scope.register(["Mod"], "z", () => (this.editor?.undo(), false));
 		this.scope.register(["Mod", "Shift"], "z", () => (this.editor?.redo(), false));
+
+		if (letters) {
+			const library = await plugin.suggest.glyphLibrary();
+			this.letterQueue = letterPrompts((ch) => library.needsPractice(ch));
+			if (!this.letterQueue.length) {
+				this.promptEl.setText("Alle Buchstaben sind schon da.");
+				return;
+			}
+			this.showPrompt();
+			this.editor.surface.el.focus({ preventScroll: true });
+			return;
+		}
 
 		if (!(await plugin.ocr.readyEngines()).length) {
 			this.promptEl.setText("Die Texterkennung hat noch keine Modelle – Einstellungen → Ink Blocks → „Herunterladen“.");
@@ -120,6 +143,19 @@ export class DictationModal extends Modal {
 	}
 
 	private showPrompt() {
+		if (this.letterQueue) {
+			const line = this.letterQueue.shift();
+			if (!line) {
+				new Notice("Geschafft! Deine Buchstaben werden ab jetzt verwendet.", 3000);
+				this.close();
+				return;
+			}
+			this.prompt = line;
+			this.promptEl.setText(line);
+			this.statsEl.setText(`Noch ${this.letterQueue.length + 1} Zeilen`);
+			this.clear();
+			return;
+		}
 		if (!this.source) return;
 		this.prompt = nextPrompt(this.source, new Set(this.recent));
 		this.recent.push(this.prompt, ...this.prompt.split(" "));
@@ -149,13 +185,17 @@ export class DictationModal extends Modal {
 	/** Geschriebenes erkennen und als Probe ablegen; sofort weiter mit der nächsten Vorgabe. */
 	private async next() {
 		const strokes = penStrokes(this.entry.doc.strokes);
-		if (!this.source || !this.prompt) return;
+		if ((!this.source && !this.letterQueue) || !this.prompt) return;
 		if (!strokes.length) {
 			new Notice("Erst die Wörter schreiben – oder „Überspringen“.", 2500);
 			return;
 		}
 		const prompt = this.prompt;
 		this.showPrompt();
+		if (this.letters) {
+			await this.plugin.training.add({ text: prompt, got: "", source: "letters", engine: "", strokes: strokes.map((s) => s.points), refHeight: referenceHeight(strokes) });
+			return;
+		}
 		const recognized = await this.plugin.ocr.recognizeStrokes(strokes);
 		if (recognized === null) {
 			new Notice("Texterkennung nicht verfügbar – die Probe wurde nicht gespeichert.", 4000);

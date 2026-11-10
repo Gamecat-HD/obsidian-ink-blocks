@@ -71,6 +71,16 @@ export interface InkSettings {
 	ocrLearnCorrections: boolean;
 	/** Auf die eigene Schrift abgestimmte Dekoder-Werte (Schreibtraining); `null` = eingebaute Werte. */
 	ocrTuned: OcrTuning | null;
+	/** Im Sparmodus trotzdem die große Fassung von v2 nutzen, falls geladen (schneller, mehr Speicher; kein Zweitmodell). */
+	ocrFastModel: boolean;
+	/** Angefangene Wörter beim Schreiben aus den eigenen Notizen ergänzen (blasse Vorschau, Antippen übernimmt). */
+	suggestEnabled: boolean;
+	/** Findet sich lokal nichts: Claude über den Dienst `ink-claude` in Termux fragen. */
+	claudeEnabled: boolean;
+	/** Schlüssel des Dienstes (`ink-claude --token`) */
+	claudeToken: string;
+	/** Messwerte der Wortvorschläge (Zeiten, Zähler, Ablauf – kein Text) in `suggest-stats.json` schreiben. Nur von Hand in `data.json`. */
+	suggestDebug: boolean;
 }
 
 /** Ergebnis von „Erkennung auf meine Schrift abstimmen“ – gilt für den Schreiber, daher in `data.json`. */
@@ -111,6 +121,11 @@ export const DEFAULT_SETTINGS: InkSettings = {
 	showText: true,
 	ocrLearnCorrections: true,
 	ocrTuned: null,
+	ocrFastModel: false,
+	suggestEnabled: false,
+	claudeEnabled: false,
+	claudeToken: "",
+	suggestDebug: false,
 };
 
 /** Grenzen der Einstellungs-Regler (Doc-Einheiten). */
@@ -155,6 +170,7 @@ export function normalizeSettings(data: Partial<InkSettings> | null | undefined)
 	}
 	if (settings.eraserMode !== "precise") settings.eraserMode = "stroke";
 	if (typeof settings.ocrHotwords !== "string") settings.ocrHotwords = d.ocrHotwords;
+	if (typeof settings.claudeToken !== "string") settings.claudeToken = d.claudeToken;
 	const t = raw.ocrTuned;
 	settings.ocrTuned =
 		t && isNum(t.weight) && isNum(t.alpha) && isNum(t.beta)

@@ -6,7 +6,8 @@
 import { decodePoints, encodePoints } from "../model/ink-format";
 import { fnv1a } from "../util/hash";
 
-export type SampleSource = "dictation" | "review";
+/** „letters“: einzeln geschriebene Buchstaben für die Wortvorschläge – zählen nicht für die Texterkennung. */
+export type SampleSource = "dictation" | "review" | "letters";
 
 export interface TrainingSample {
 	id: string;
@@ -64,7 +65,7 @@ export function parseSamples(text: string): TrainingSample[] {
 		out.push({
 			...rest,
 			got: typeof rest.got === "string" ? rest.got : "",
-			source: rest.source === "review" ? "review" : "dictation",
+			source: rest.source === "review" || rest.source === "letters" ? rest.source : "dictation",
 			refHeight: isNum(rest.refHeight) ? rest.refHeight : 10,
 			strokes: p.map((s) => decodePoints(s)),
 		});
@@ -79,9 +80,9 @@ export function dedupeSamples(samples: TrainingSample[]): TrainingSample[] {
 	return samples.filter((s, i) => !s.key || last.get(s.key) === i);
 }
 
-/** Proben mit Text (verworfene „kein Text“-Proben zählen nicht). */
+/** Proben mit Text (verworfene „kein Text“-Proben und Buchstabenreihen zählen nicht). */
 export function labeled(samples: TrainingSample[]): (TrainingSample & { text: string })[] {
-	return samples.filter((s): s is TrainingSample & { text: string } => typeof s.text === "string" && s.text.trim() !== "" && s.strokes.length > 0);
+	return samples.filter((s): s is TrainingSample & { text: string } => s.source !== "letters" && typeof s.text === "string" && s.text.trim() !== "" && s.strokes.length > 0);
 }
 
 /**

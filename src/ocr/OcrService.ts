@@ -187,7 +187,13 @@ export class OcrService {
 
 	/** Klartextzeilen des Vaults (wie fürs LM) – Quelle der Diktat-Vorgaben. */
 	async corpusLines(): Promise<string[]> {
-		return (await this.decoder()).setup.lines ?? [];
+		return (await this.corpusSnapshot()).lines;
+	}
+
+	/** Klartextzeilen mit Generation: Sie ändert sich, sobald die Zeilen neu gesammelt wurden. */
+	async corpusSnapshot(): Promise<{ gen: number; lines: string[] }> {
+		const { gen, setup } = await this.decoder();
+		return { gen, lines: setup.lines ?? [] };
 	}
 
 	/** Engines, deren Dateien vollständig vorliegen. */
@@ -255,7 +261,7 @@ export class OcrService {
 		if (id !== "htr-v2") return HTR_V1;
 		if (this.v2Precision === "fp32") return HTR_V2_FP32;
 		if (this.v2Precision === "int8") return HTR_V2;
-		if (ocrLite() && (await this.models.isReady(HTR_V2))) return HTR_V2;
+		if (ocrLite() && !this.plugin.settings.ocrFastModel && (await this.models.isReady(HTR_V2))) return HTR_V2;
 		return (await this.models.isReady(HTR_V2_FP32)) ? HTR_V2_FP32 : HTR_V2;
 	}
 
@@ -313,15 +319,15 @@ export class OcrService {
 	}
 
 	/** Segmente für den Worker (Striche als Punktlisten). */
-	private workerSegments(segs: Segment[], refHeight: number, detail = false): WorkerSegment[] {
-		return segs.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight, raster: this.raster, ...(detail ? { detail } : {}) }));
+	private workerSegments(segs: Segment[], refHeight: number, detail = false, fast = false): WorkerSegment[] {
+		return segs.map((seg) => ({ strokes: seg.strokes.map((s) => s.points), box: seg.box, refHeight, raster: this.raster, ...(detail ? { detail } : {}), ...(fast ? { fast } : {}) }));
 	}
 
 	/**
 	 * Wie `recognizeStrokes`, aber je Segment mit Wörtern (Position, Konfidenz) und Alternativen – fürs
-	 * Überprüfen im Schreibtraining. `null` = keine Engine verfügbar.
+	 * Überprüfen im Schreibtraining. `null` = keine Engine verfügbar. `fast`: nur das Hauptmodell, ohne Alternativen.
 	 */
-	async recognizeDetailed(strokes: Stroke[]): Promise<{ engine: string; refHeight: number; lines: { seg: Segment; result: RecognizedSegment }[][] } | null> {
+	async recognizeDetailed(strokes: Stroke[], fast = false): Promise<{ engine: string; refHeight: number; lines: { seg: Segment; result: RecognizedSegment }[][] } | null> {
 		const lines = segmentLines(strokes);
 		const refHeight = referenceHeight(strokes.filter((s) => s.tool === "pen" && !s.shape));
 		for (;;) {
@@ -329,7 +335,7 @@ export class OcrService {
 			if (!engine) return null;
 			const segs = lines.flat();
 			try {
-				const results = segs.length ? await engine.recognize(this.workerSegments(segs, refHeight, true)) : [];
+				const results = segs.length ? await engine.recognize(this.workerSegments(segs, refHeight, true, fast)) : [];
 				const byKey = new Map(segs.map((seg, i) => [seg.key, results[i] ?? { text: "", confidence: 0, ms: 0 }]));
 				return { engine: engine.version, refHeight, lines: lines.map((l) => l.map((seg) => ({ seg, result: byKey.get(seg.key)! }))) };
 			} catch (e) {

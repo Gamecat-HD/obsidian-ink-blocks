@@ -3,7 +3,7 @@ import type { Pinch } from "../input/MultiTouch";
 import { PointerPipeline } from "../input/PointerPipeline";
 import { Selection } from "../input/Selection";
 import type InkBlocksPlugin from "../main";
-import { opBounds, type InkOp } from "../model/ops";
+import { applyOp, opBounds, replaceOp, type InkOp } from "../model/ops";
 import { PageBackground } from "../render/background";
 import { Surface } from "../render/Surface";
 import type { Pattern, PatternChange } from "../model/pattern";
@@ -28,6 +28,8 @@ export interface InkEditorHost {
 	insertText?(text: string): Promise<boolean>;
 	/** Block samt Handschrift löschen (nur der Block in der Notiz). */
 	deleteBlock?(): void;
+	/** Keine Wortvorschläge auf dieser Fläche (Schreibtraining). */
+	noSuggestions?: boolean;
 	/** Zwei Finger: zoomen/verschieben (nur die ausgeklappte Ansicht). */
 	pinch?(p: Pinch): void;
 	pinchEnd?(): void;
@@ -91,6 +93,10 @@ export class InkEditor {
 			redo: () => this.gestureHistory("redo"),
 			pinch: host.pinch ? (p) => host.pinch?.(p) : undefined,
 			pinchEnd: host.pinchEnd ? () => host.pinchEnd?.() : undefined,
+			suggestionAt: (x, y) => plugin.suggest.hit(this, x, y),
+			acceptSuggestion: () => this.acceptSuggestion(),
+			dismissSuggestion: () => plugin.suggest.dismiss(),
+			holdSuggestion: () => plugin.suggest.hold(),
 		});
 		plugin.editors.add(this);
 		this.setupBackground();
@@ -108,11 +114,18 @@ export class InkEditor {
 		return !!this.host.expanded;
 	}
 
+	/** Linienabstand einer linierten oder karierten Heft-Fläche (Doc-Einheiten); 0 = keine Linien. */
+	get lineGap(): number {
+		const pattern = this.host.pattern();
+		return this.host.entry.doc.space === "nb" && pattern.style !== "blank" ? pattern.gap : 0;
+	}
+
 	get busy(): boolean {
 		return this.pipeline.active;
 	}
 
 	destroy() {
+		this.host.plugin.suggest.forget(this);
 		this.host.plugin.editors.delete(this);
 		this.background?.destroy();
 		this.pipeline.destroy();
@@ -123,6 +136,8 @@ export class InkEditor {
 
 	/** Dokument neu geladen (Sync) oder in einer anderen Ansicht geändert. */
 	setDoc() {
+		// Tandem lädt das Dokument nach jedem Strich neu; der Vorschlag bleibt, solange kein Strich dazugekommen ist.
+		this.host.plugin.suggest.documentChanged(this);
 		this.surface.setDoc(this.host.entry.doc);
 		this.surface.drawRemote(this.host.plugin.api.ghostsFor(this.host.entry.path), this.host.plugin.api.pointersFor(this.host.entry.path));
 		this.surface.setBlame(this.host.plugin.api.blameFor(this.host.entry.path));
@@ -132,6 +147,7 @@ export class InkEditor {
 
 	/** Werkzeug gewechselt (in irgendeiner Leiste): Auswahl gilt nur fürs Lasso. */
 	toolsChanged() {
+		this.host.plugin.suggest.forget(this);
 		if (this.host.plugin.settings.tools.tool !== "lasso") this.selection.clear();
 		this.toolbar.update();
 	}
@@ -192,7 +208,20 @@ export class InkEditor {
 		new Notice(what === "undo" ? "Rückgängig" : "Wiederholt", 900);
 	}
 
+	/** Getippter Wortvorschlag wird zu echten Strichen – als eine Änderung, also mit einem Schritt rückgängig. */
+	private acceptSuggestion() {
+		const strokes = this.host.plugin.suggest.take(this);
+		if (!strokes) return;
+		const { doc } = this.host.entry;
+		const op = replaceOp(doc, new Set(), strokes);
+		applyOp(doc, op);
+		this.surface.redraw(opBounds(op));
+		this.onOp(op);
+		void this.host.plugin.suggest.continueAfterAccept(this);
+	}
+
 	private afterHistory(op: InkOp) {
+		this.host.plugin.suggest.forget(this);
 		this.surface.resize();
 		this.surface.redraw(opBounds(op));
 		this.host.commit();
@@ -205,6 +234,8 @@ export class InkEditor {
 		this.host.commit();
 		this.toolbar.update();
 		this.host.plugin.api.emitCommit(this.host.entry.path);
+		if (op.kind === "add" && !this.host.noSuggestions) this.host.plugin.suggest.strokeAdded(this, op.stroke);
+		else this.host.plugin.suggest.forget(this);
 	};
 
 	private setupBackground() {

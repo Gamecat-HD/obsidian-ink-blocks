@@ -16,6 +16,7 @@ import { EmbedAnnotator } from "./ui/EmbedAnnotator";
 import { registerTabletMode } from "./ui/TabletMode";
 import { InkSettingTab, normalizeSettings, type InkSettings } from "./settings";
 import { InkStore, type InkEntry } from "./store/InkStore";
+import { SuggestService } from "./suggest/SuggestService";
 import { SampleStore } from "./training/SampleStore";
 import { runTuning } from "./training/runTuning";
 
@@ -25,6 +26,8 @@ export default class InkBlocksPlugin extends Plugin {
 	/** Öffentliche Schnittstelle für andere Plugins (siehe src/api.ts). */
 	api!: InkApi;
 	ocr!: OcrService;
+	/** Wortvorschläge beim Schreiben */
+	suggest!: SuggestService;
 	/** Proben des Schreibtrainings */
 	training!: SampleStore;
 	readonly blocks = new Set<InkBlockChild>();
@@ -56,6 +59,7 @@ export default class InkBlocksPlugin extends Plugin {
 		this.store = new InkStore(this);
 		this.training = new SampleStore(this);
 		this.ocr = new OcrService(this);
+		this.suggest = new SuggestService(this);
 
 		this.registerMarkdownCodeBlockProcessor("ink", (source, el, ctx) => {
 			ctx.addChild(new InkBlockChild(el, source, ctx, this));
@@ -80,6 +84,7 @@ export default class InkBlocksPlugin extends Plugin {
 	onunload() {
 		this.api.destroy();
 		this.saveSoon.run();
+		this.suggest.dispose();
 		this.ocr.dispose();
 		this.store.dispose();
 		disposeBackgrounds();

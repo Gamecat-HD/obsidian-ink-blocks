@@ -35,6 +35,12 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 	});
 
 	plugin.addCommand({
+		id: "toggle-suggestions",
+		name: "Wortvorschläge ein- oder ausschalten",
+		callback: () => plugin.suggest.toggle(),
+	});
+
+	plugin.addCommand({
 		id: "annotate-embed",
 		name: "Bild/PDF in dieser Zeile beschriftbar machen",
 		editorCallback: (editor, ctx) => {
@@ -99,6 +105,12 @@ export function registerCommands(plugin: InkBlocksPlugin) {
 		id: "training-dictation",
 		name: "Schreibtraining: Diktat",
 		callback: () => new DictationModal(plugin).open(),
+	});
+
+	plugin.addCommand({
+		id: "training-letters",
+		name: "Schreibtraining: Buchstaben für Wortvorschläge",
+		callback: () => new DictationModal(plugin, true).open(),
 	});
 
 	plugin.addCommand({
@@ -354,6 +366,7 @@ async function saveSegmentImages(plugin: InkBlocksPlugin, note: TFile, text: str
 export function trainingMenu(plugin: InkBlocksPlugin): Menu {
 	const menu = new Menu();
 	menu.addItem((i) => i.setTitle("Diktat").setIcon("pencil-line").onClick(() => new DictationModal(plugin).open()));
+	menu.addItem((i) => i.setTitle("Buchstaben für Wortvorschläge").setIcon("sparkles").onClick(() => new DictationModal(plugin, true).open()));
 	const file = plugin.app.workspace.getActiveFile();
 	if (file?.extension === "md") {
 		menu.addItem((i) =>
