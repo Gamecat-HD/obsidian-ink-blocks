@@ -130,3 +130,7 @@ npm run e2e -- scripts/e2e/tests/*.mjs   # E2E in echtem Obsidian (s. u.)
 - Ausnahme, nur wenn **„Vorschläge von Claude“** eingeschaltet ist: Dann gehen Titel und Anfang der aktuellen Notiz (bis 600 Zeichen) und der zuletzt geschriebene Text (bis 300 Zeichen) an den lokalen Dienst `ink-claude` und von dort über Claude Code an Anthropic. Der Dienst hört nur auf 127.0.0.1 und verlangt einen Schlüssel; Claude bekommt dabei keine Werkzeuge.
 - **Einmaliger Download, nur auf Knopfdruck** (Einstellungen → Ink Blocks → „Herunterladen“ oder Befehl „Texterkennung: Modelle herunterladen“): Erkennungsmodell `naeyn/de-htr-web-v2` von Hugging Face (ca. 10 MB, Apache-2.0, fester Commit) und `ort-wasm-simd-threaded.wasm` von jsDelivr (ca. 14 MB, onnxruntime-web 1.30.0). Beides wird per SHA-256 geprüft und in `<plugin>/models/` abgelegt. Danach läuft alles offline.
 - Empfohlen, ebenfalls nur auf Knopfdruck: `naeyn/de-htr-web` v1 (Hugging Face, ca. 10 MB). Zusammen mit v2 erkennt es per Ensemble gut 10 % weniger Fehler. Dazu dasselbe v2-Modell ungerechnet als `model-fp32.onnx` (ca. 40 MB), das 3–4× schneller erkennt. Optional: Tesseract.js 7 mit deutschen Sprachdaten (jsDelivr, ca. 5 MB) als letzte Ausweich-Engine.
+
+## Lizenz
+
+[MIT](LICENSE). Die Erkennungsmodelle werden nicht mitgeliefert und stehen unter ihren eigenen Lizenzen (siehe oben).
